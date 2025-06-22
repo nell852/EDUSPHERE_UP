@@ -16,7 +16,7 @@ import {
   SafeAreaView,
   RefreshControl,
 } from "react-native"
-import { Plus, Search, Users, MessageCircle, Calendar, Award, X, Bell } from "lucide-react-native"
+import { Plus, Search, Users, MessageCircle, Calendar, Award, X, Bell, Check } from "lucide-react-native"
 import { clubService, type ClubWithDetails, type FeedItem } from "../../services/clubService"
 import { supabase } from "../../lib/supabase"
 import * as ImagePicker from "expo-image-picker"
@@ -35,6 +35,22 @@ const Colors = {
   darkGray: "#48484A",
   background: "#F2F2F7",
   gold: "#FFD700",
+}
+
+interface PendingRequest {
+  id: string
+  club_id: string
+  demandeur_id: string
+  message: string | null
+  created_at: string
+  clubs: {
+    nom: string
+  }
+  utilisateurs: {
+    nom: string | null
+    prenom: string | null
+    photo_profil_url: string | null
+  }
 }
 
 export default function CommunityScreen() {
@@ -59,10 +75,16 @@ export default function CommunityScreen() {
   const [notifications, setNotifications] = useState<any[]>([])
   const [showNotifications, setShowNotifications] = useState(false)
 
+  // États pour la gestion des demandes
+  const [showRequestsModal, setShowRequestsModal] = useState(false)
+  const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([])
+  const [processingRequest, setProcessingRequest] = useState<string | null>(null)
+
   // Charger les données initiales
   useEffect(() => {
     loadInitialData()
     loadNotifications()
+    loadPendingRequests()
 
     // S'abonner aux nouvelles notifications
     const notificationSubscription = supabase
@@ -146,22 +168,64 @@ export default function CommunityScreen() {
 
       console.log("Chargement des notifications pour:", user.user.id)
 
-      const { data: notifs, error } = await supabase
+      // Récupérer seulement les notifications non lues
+      const { data: unreadNotifs, error: unreadError } = await supabase
         .from("notifications")
         .select("*")
         .eq("utilisateur_id", user.user.id)
         .eq("read", false)
         .order("created_at", { ascending: false })
 
-      if (error) {
-        console.error("Erreur lors du chargement des notifications:", error)
-        throw error
+      if (unreadError) {
+        console.error("Erreur lors du chargement des notifications non lues:", unreadError)
+        throw unreadError
       }
 
-      console.log("Notifications trouvées:", notifs?.length || 0)
-      setNotifications(notifs || [])
+      console.log("Notifications non lues trouvées:", unreadNotifs?.length || 0)
+      setNotifications(unreadNotifs || [])
     } catch (err) {
       console.error("Erreur lors du chargement des notifications:", err)
+    }
+  }
+
+  const loadPendingRequests = async () => {
+    try {
+      const { data: user } = await supabase.auth.getUser()
+      if (!user.user) return
+
+      const { data: requestsData, error } = await supabase
+        .from("demandes_adhesion")
+        .select(`
+          *,
+          clubs!inner(nom, proprietaire_id),
+          utilisateurs(nom, prenom, photo_profil_url)
+        `)
+        .eq("clubs.proprietaire_id", user.user.id)
+        .eq("statut", "en_attente")
+        .order("created_at", { ascending: false })
+
+      if (error) throw error
+
+      console.log("Demandes en attente trouvées:", requestsData?.length || 0)
+      setPendingRequests(requestsData || [])
+    } catch (error) {
+      console.error("Erreur lors du chargement des demandes:", error)
+    }
+  }
+
+  const handleNotificationClick = async (notification: any) => {
+    try {
+      // Marquer la notification comme lue
+      await markNotificationAsRead(notification.id)
+
+      // Rediriger selon le type de notification
+      if (notification.type === "demande_adhesion") {
+        setShowNotifications(false)
+        setShowRequestsModal(true)
+        await loadPendingRequests()
+      }
+    } catch (error) {
+      console.error("Erreur lors du traitement de la notification:", error)
     }
   }
 
@@ -178,10 +242,25 @@ export default function CommunityScreen() {
     }
   }
 
+  const handleJoinRequest = async (requestId: string, action: "accepter" | "refuser") => {
+    setProcessingRequest(requestId)
+    try {
+      await clubService.handleJoinRequest(requestId, action)
+      Alert.alert("Succès", action === "accepter" ? "Demande acceptée !" : "Demande refusée")
+
+      // Recharger toutes les données
+      await Promise.all([loadPendingRequests(), loadNotifications(), loadMyClubs(), loadClubs()])
+    } catch (error) {
+      Alert.alert("Erreur", "Impossible de traiter la demande")
+      console.error("Erreur:", error)
+    } finally {
+      setProcessingRequest(null)
+    }
+  }
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true)
-    await loadInitialData()
-    await loadNotifications()
+    await Promise.all([loadInitialData(), loadNotifications(), loadPendingRequests()])
     setRefreshing(false)
   }, [])
 
@@ -366,6 +445,47 @@ export default function CommunityScreen() {
     </View>
   )
 
+  const renderPendingRequest = ({ item }: { item: PendingRequest }) => {
+    const memberName = `${item.utilisateurs?.prenom || ""} ${item.utilisateurs?.nom || ""}`.trim()
+
+    return (
+      <View style={styles.requestCard}>
+        <Image
+          source={{
+            uri: item.utilisateurs?.photo_profil_url || "https://via.placeholder.com/50",
+          }}
+          style={styles.memberAvatar}
+        />
+        <View style={styles.requestInfo}>
+          <Text style={styles.memberName}>{memberName || "Utilisateur"}</Text>
+          <Text style={styles.clubName}>Club: {item.clubs.nom}</Text>
+          {item.message && <Text style={styles.requestMessage}>"{item.message}"</Text>}
+          <Text style={styles.requestDate}>{new Date(item.created_at).toLocaleDateString("fr-FR")}</Text>
+        </View>
+        <View style={styles.actionButtons}>
+          <TouchableOpacity
+            style={[styles.actionButton, styles.acceptButton]}
+            onPress={() => handleJoinRequest(item.id, "accepter")}
+            disabled={processingRequest === item.id}
+          >
+            {processingRequest === item.id ? (
+              <ActivityIndicator size="small" color={Colors.white} />
+            ) : (
+              <Check size={20} color={Colors.white} />
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.actionButton, styles.rejectButton]}
+            onPress={() => handleJoinRequest(item.id, "refuser")}
+            disabled={processingRequest === item.id}
+          >
+            <X size={20} color={Colors.white} />
+          </TouchableOpacity>
+        </View>
+      </View>
+    )
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
@@ -389,6 +509,16 @@ export default function CommunityScreen() {
             </View>
           )}
         </TouchableOpacity>
+
+        {/* Bouton pour voir les demandes en attente */}
+        {pendingRequests.length > 0 && (
+          <TouchableOpacity style={styles.requestsButton} onPress={() => setShowRequestsModal(true)}>
+            <Users size={20} color={Colors.warning} />
+            <View style={styles.requestsBadge}>
+              <Text style={styles.requestsBadgeText}>{pendingRequests.length}</Text>
+            </View>
+          </TouchableOpacity>
+        )}
 
         <TouchableOpacity style={styles.createButton} onPress={() => setShowCreateModal(true)}>
           <Plus size={20} color={Colors.white} />
@@ -546,7 +676,7 @@ export default function CommunityScreen() {
                 <Text style={styles.cancelButtonText}>Annuler</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalButton, styles.createButtonStyle]}
+                style={[styles.modalButton, styles.createButton]}
                 onPress={createClub}
                 disabled={creatingClub}
               >
@@ -572,24 +702,12 @@ export default function CommunityScreen() {
               </TouchableOpacity>
             </View>
 
-            {notifications.length > 0 && (
-              <TouchableOpacity
-                style={styles.viewAllRequestsButton}
-                onPress={() => {
-                  setShowNotifications(false)
-                  router.push("/club-requests")
-                }}
-              >
-                <Text style={styles.viewAllRequestsText}>Voir toutes les demandes</Text>
-              </TouchableOpacity>
-            )}
-
             {notifications.length > 0 ? (
               <FlatList
                 data={notifications}
                 keyExtractor={(item) => item.id}
                 renderItem={({ item }) => (
-                  <TouchableOpacity style={styles.notificationItem} onPress={() => markNotificationAsRead(item.id)}>
+                  <TouchableOpacity style={styles.notificationItem} onPress={() => handleNotificationClick(item)}>
                     <Text style={styles.notificationMessage}>{item.message}</Text>
                     <Text style={styles.notificationDate}>{new Date(item.created_at).toLocaleDateString("fr-FR")}</Text>
                     <Text style={styles.notificationType}>Type: {item.type}</Text>
@@ -599,6 +717,33 @@ export default function CommunityScreen() {
             ) : (
               <View style={styles.emptyNotifications}>
                 <Text style={styles.emptyNotificationsText}>Aucune notification</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal des demandes d'adhésion */}
+      <Modal visible={showRequestsModal} animationType="slide" transparent={true}>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Demandes d'adhésion</Text>
+              <TouchableOpacity onPress={() => setShowRequestsModal(false)}>
+                <X size={24} color={Colors.black} />
+              </TouchableOpacity>
+            </View>
+
+            {pendingRequests.length > 0 ? (
+              <FlatList
+                data={pendingRequests}
+                renderItem={renderPendingRequest}
+                keyExtractor={(item) => item.id}
+                showsVerticalScrollIndicator={false}
+              />
+            ) : (
+              <View style={styles.emptyNotifications}>
+                <Text style={styles.emptyNotificationsText}>Aucune demande en attente</Text>
               </View>
             )}
           </View>
@@ -657,6 +802,30 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   notificationBadgeText: {
+    color: Colors.white,
+    fontSize: 12,
+    fontWeight: "bold",
+  },
+  requestsButton: {
+    marginLeft: 12,
+    width: 40,
+    height: 40,
+    justifyContent: "center",
+    alignItems: "center",
+    position: "relative",
+  },
+  requestsBadge: {
+    position: "absolute",
+    top: 5,
+    right: 5,
+    backgroundColor: Colors.warning,
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  requestsBadgeText: {
     color: Colors.white,
     fontSize: 12,
     fontWeight: "bold",
@@ -935,10 +1104,6 @@ const styles = StyleSheet.create({
     color: Colors.darkGray,
     fontWeight: "600",
   },
-  createButtonStyle: {
-    backgroundColor: Colors.primary,
-    marginLeft: 8,
-  },
   createButtonText: {
     color: Colors.white,
     fontWeight: "600",
@@ -978,17 +1143,59 @@ const styles = StyleSheet.create({
     color: Colors.gray,
     marginTop: 2,
   },
-  viewAllRequestsButton: {
-    backgroundColor: Colors.primary,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    marginBottom: 16,
+  requestCard: {
+    flexDirection: "row",
     alignItems: "center",
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: Colors.black,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  viewAllRequestsText: {
-    color: Colors.white,
-    fontWeight: "600",
+  memberAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    marginRight: 12,
+  },
+  requestInfo: {
+    flex: 1,
+  },
+  memberName: {
     fontSize: 16,
+    fontWeight: "600",
+    color: Colors.black,
+    marginBottom: 2,
+  },
+  requestMessage: {
+    fontSize: 12,
+    color: Colors.darkGray,
+    fontStyle: "italic",
+    marginBottom: 4,
+  },
+  requestDate: {
+    fontSize: 12,
+    color: Colors.gray,
+  },
+  actionButtons: {
+    flexDirection: "row",
+  },
+  actionButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: 8,
+  },
+  acceptButton: {
+    backgroundColor: Colors.success,
+  },
+  rejectButton: {
+    backgroundColor: Colors.danger,
   },
 })

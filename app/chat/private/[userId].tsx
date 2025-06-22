@@ -17,6 +17,7 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router"
 import { Send, ArrowLeft, Phone, Video } from "lucide-react-native"
 import { chatService, type ChatMessage } from "../../../services/chatService"
+import { userService } from "../../../services/userService"
 import { supabase } from "../../../lib/supabase"
 
 const Colors = {
@@ -88,20 +89,15 @@ export default function PrivateChatScreen() {
       // Définir l'ID utilisateur AVANT de charger les messages
       setCurrentUserId(user.user.id)
 
-      // Récupérer les infos de l'utilisateur actuel
-      const { data: currentUserData } = await supabase
-        .from("utilisateurs")
-        .select("nom, prenom, photo_profil_url")
-        .eq("id", user.user.id)
-        .single()
-
-      setCurrentUser(currentUserData)
+      // S'assurer que le profil de l'utilisateur actuel existe
+      const currentUserProfile = await userService.ensureProfileExists()
+      setCurrentUser(currentUserProfile)
 
       // Récupérer les infos de l'autre utilisateur
-      const { data: otherUserData } = await supabase.from("utilisateurs").select("*").eq("id", userId).single()
+      const otherUserProfile = await userService.getUserById(userId)
 
-      if (otherUserData) {
-        setOtherUser(otherUserData)
+      if (otherUserProfile) {
+        setOtherUser(otherUserProfile)
       } else {
         Alert.alert("Erreur", "Utilisateur introuvable")
         router.back()
@@ -124,15 +120,11 @@ export default function PrivateChatScreen() {
           },
           async (payload) => {
             // Récupérer les détails de l'expéditeur
-            const { data: expediteur } = await supabase
-              .from("utilisateurs")
-              .select("nom, prenom, photo_profil_url")
-              .eq("id", payload.new.expediteur_id)
-              .single()
+            const expediteurProfile = await userService.getUserById(payload.new.expediteur_id)
 
             const messageWithSender: ChatMessage = {
               ...(payload.new as any),
-              expediteur: expediteur,
+              expediteur: expediteurProfile,
             }
 
             setMessages((prev) => {
@@ -322,6 +314,10 @@ export default function PrivateChatScreen() {
     )
   }
 
+  const displayName = otherUser
+    ? `${otherUser.prenom || ""} ${otherUser.nom || ""}`.trim()
+    : decodeURIComponent(name || "Chat privé")
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
@@ -336,7 +332,7 @@ export default function PrivateChatScreen() {
           style={styles.headerAvatar}
         />
         <View style={styles.headerInfo}>
-          <Text style={styles.headerTitle}>{decodeURIComponent(name || "Chat privé")}</Text>
+          <Text style={styles.headerTitle}>{displayName || "Utilisateur"}</Text>
           <Text style={styles.headerSubtitle}>En ligne</Text>
         </View>
         <View style={styles.headerActions}>

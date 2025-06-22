@@ -1,416 +1,420 @@
-import { useState } from 'react';
-import { StyleSheet, View, Text, Image, TouchableOpacity, ScrollView } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Settings, Users, MessageCircle, Code, FileText, Clock, ChevronRight } from 'lucide-react-native';
-import Colors from '@/constants/Colors';
-import { StatusBar } from 'expo-status-bar';
+"use client"
 
-const PROGRAMMING_LANGUAGES = ['JavaScript', 'Python', 'Java', 'C++'];
+import { useState, useEffect } from "react"
+import {
+  StyleSheet,
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  Image,
+  SafeAreaView,
+  Alert,
+  ActivityIndicator,
+  ScrollView,
+} from "react-native"
+import { Camera, Save, User as UserIcon } from "lucide-react-native"
+import { userService } from "../../services/userService"
+import { supabase } from "../../lib/supabase"
+import * as ImagePicker from "expo-image-picker"
 
-const PROJECTS = [
-  {
-    id: '1',
-    name: 'E-commerce Platform',
-    description: 'A full-stack e-commerce application with React and Node.js',
-    languages: ['JavaScript', 'React', 'Node.js'],
-    collaborators: 3,
-    lastUpdated: '2 days ago',
-  },
-  {
-    id: '2',
-    name: 'Machine Learning Model',
-    description: 'Predictive model for financial forecasting',
-    languages: ['Python', 'TensorFlow'],
-    collaborators: 2,
-    lastUpdated: '1 week ago',
-  },
-];
+const Colors = {
+  primary: "#007AFF",
+  secondary: "#5856D6",
+  success: "#34C759",
+  warning: "#FF9500",
+  danger: "#FF3B30",
+  white: "#FFFFFF",
+  black: "#000000",
+  gray: "#8E8E93",
+  lightGray: "#F2F2F7",
+  darkGray: "#48484A",
+  background: "#F2F2F7",
+}
 
 export default function ProfileScreen() {
-  const [activeTab, setActiveTab] = useState('journey');
-  
-  return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <StatusBar style="auto" />
+  const [profile, setProfile] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [editing, setEditing] = useState(false)
+
+  // États pour l'édition
+  const [nom, setNom] = useState("")
+  const [prenom, setPrenom] = useState("")
+  const [matricule, setMatricule] = useState("")
+  const [dateNaissance, setDateNaissance] = useState("")
+  const [sexe, setSexe] = useState("")
+  const [photoUrl, setPhotoUrl] = useState("")
+
+  useEffect(() => {
+    loadProfile()
+  }, [])
+
+  const loadProfile = async () => {
+    try {
+      setLoading(true)
       
-      {/* Profile header */}
-      <View style={styles.header}>
-        <View style={styles.profileSection}>
-          <Image
-            source={{ uri: 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=600' }}
-            style={styles.profileImage}
-          />
-          <View style={styles.profileInfo}>
-            <Text style={styles.profileName}>Alex Johnson</Text>
-            <Text style={styles.profileMatricule}>Matricule: STD24785</Text>
-            <Text style={styles.profileSchool}>School of Computer Science</Text>
+      // S'assurer que le profil existe
+      const userProfile = await userService.ensureProfileExists()
+      setProfile(userProfile)
+      
+      // Remplir les champs d'édition
+      setNom(userProfile.nom || "")
+      setPrenom(userProfile.prenom || "")
+      setMatricule(userProfile.matricule || "")
+      setDateNaissance(userProfile.date_de_naissance || "")
+      setSexe(userProfile.sexe || "")
+      setPhotoUrl(userProfile.photo_profil_url || "")
+    } catch (error) {
+      console.error("Erreur lors du chargement du profil:", error)
+      Alert.alert("Erreur", "Impossible de charger le profil")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const saveProfile = async () => {
+    try {
+      setSaving(true)
+      
+      const updatedProfile = await userService.createOrUpdateProfile({
+        nom: nom.trim(),
+        prenom: prenom.trim(),
+        matricule: matricule.trim(),
+        date_de_naissance: dateNaissance || undefined,
+        sexe: sexe || undefined,
+        photo_profil_url: photoUrl || undefined,
+      })
+
+      setProfile(updatedProfile)
+      setEditing(false)
+      Alert.alert("Succès", "Profil mis à jour avec succès !")
+    } catch (error) {
+      console.error("Erreur lors de la sauvegarde:", error)
+      Alert.alert("Erreur", "Impossible de sauvegarder le profil")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const pickImage = async () => {
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync()
+    if (!permissionResult.granted) {
+      Alert.alert("Erreur", "Permission d'accès à la galerie refusée")
+      return
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.5,
+    })
+
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      // Ici vous pourriez uploader l'image vers Supabase Storage
+      setPhotoUrl(result.assets[0].uri)
+    }
+  }
+
+  const signOut = async () => {
+    try {
+      await supabase.auth.signOut()
+      Alert.alert("Déconnexion", "Vous avez été déconnecté avec succès")
+    } catch (error) {
+      console.error("Erreur lors de la déconnexion:", error)
+      Alert.alert("Erreur", "Impossible de se déconnecter")
+    }
+  }
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.loadingText}>Chargement du profil...</Text>
+        </View>
+      </SafeAreaView>
+    )
+  }
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Mon Profil</Text>
+          <TouchableOpacity
+            style={styles.editButton}
+            onPress={() => setEditing(!editing)}
+          >
+            <Text style={styles.editButtonText}>
+              {editing ? "Annuler" : "Modifier"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Photo de profil */}
+        <View style={styles.photoSection}>
+          <View style={styles.photoContainer}>
+            {photoUrl ? (
+              <Image source={{ uri: photoUrl }} style={styles.profilePhoto} />
+            ) : (
+              <View style={styles.placeholderPhoto}>
+                <UserIcon size={40} color={Colors.gray} />
+              </View>
+            )}
+            {editing && (
+              <TouchableOpacity style={styles.cameraButton} onPress={pickImage}>
+                <Camera size={20} color={Colors.white} />
+              </TouchableOpacity>
+            )}
+          </View>
+          <Text style={styles.userName}>
+            {profile?.prenom} {profile?.nom}
+          </Text>
+          <Text style={styles.userEmail}>{profile?.email}</Text>
+        </View>
+
+        {/* Informations */}
+        <View style={styles.infoSection}>
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Prénom</Text>
+            <TextInput
+              style={[styles.input, !editing && styles.inputDisabled]}
+              value={prenom}
+              onChangeText={setPrenom}
+              editable={editing}
+              placeholder="Votre prénom"
+              placeholderTextColor={Colors.gray}
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Nom</Text>
+            <TextInput
+              style={[styles.input, !editing && styles.inputDisabled]}
+              value={nom}
+              onChangeText={setNom}
+              editable={editing}
+              placeholder="Votre nom"
+              placeholderTextColor={Colors.gray}
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Matricule</Text>
+            <TextInput
+              style={[styles.input, !editing && styles.inputDisabled]}
+              value={matricule}
+              onChangeText={setMatricule}
+              editable={editing}
+              placeholder="Votre matricule"
+              placeholderTextColor={Colors.gray}
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Date de naissance</Text>
+            <TextInput
+              style={[styles.input, !editing && styles.inputDisabled]}
+              value={dateNaissance}
+              onChangeText={setDateNaissance}
+              editable={editing}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={Colors.gray}
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Sexe</Text>
+            <TextInput
+              style={[styles.input, !editing && styles.inputDisabled]}
+              value={sexe}
+              onChangeText={setSexe}
+              editable={editing}
+              placeholder="M/F"
+              placeholderTextColor={Colors.gray}
+            />
           </View>
         </View>
-        <TouchableOpacity style={styles.settingsButton}>
-          <Settings size={24} color={Colors.light.darkGray} />
-        </TouchableOpacity>
-      </View>
-      
-      {/* Tabs */}
-      <View style={styles.tabsContainer}>
-        <TouchableOpacity 
-          style={[styles.tab, activeTab === 'journey' && styles.activeTab]} 
-          onPress={() => setActiveTab('journey')}
-        >
-          <Text style={[styles.tabText, activeTab === 'journey' && styles.activeTabText]}>My Journey</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.tab, activeTab === 'colleagues' && styles.activeTab]} 
-          onPress={() => setActiveTab('colleagues')}
-        >
-          <Text style={[styles.tabText, activeTab === 'colleagues' && styles.activeTabText]}>Colleagues</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.tab, activeTab === 'chat' && styles.activeTab]} 
-          onPress={() => setActiveTab('chat')}
-        >
-          <Text style={[styles.tabText, activeTab === 'chat' && styles.activeTabText]}>Chat</Text>
-        </TouchableOpacity>
-      </View>
-      
-      {/* Content based on active tab */}
-      <ScrollView style={styles.content}>
-        {activeTab === 'journey' && (
-          <View>
-            {/* Programming Languages */}
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Programming Languages</Text>
-                <TouchableOpacity style={styles.addButton}>
-                  <Text style={styles.addButtonText}>Add</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={styles.languagesContainer}>
-                {PROGRAMMING_LANGUAGES.map((language, index) => (
-                  <View key={index} style={styles.languageChip}>
-                    <Text style={styles.languageText}>{language}</Text>
-                  </View>
-                ))}
-              </View>
-            </View>
-            
-            {/* Projects */}
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Projects</Text>
-                <TouchableOpacity style={styles.addButton}>
-                  <Text style={styles.addButtonText}>Add</Text>
-                </TouchableOpacity>
-              </View>
-              
-              {PROJECTS.map((project) => (
-                <TouchableOpacity key={project.id} style={styles.projectCard}>
-                  <View style={styles.projectHeader}>
-                    <Text style={styles.projectName}>{project.name}</Text>
-                    <ChevronRight size={16} color={Colors.light.darkGray} />
-                  </View>
-                  <Text style={styles.projectDescription}>{project.description}</Text>
-                  
-                  <View style={styles.projectLanguages}>
-                    {project.languages.map((language, index) => (
-                      <View key={index} style={styles.projectLanguageChip}>
-                        <Text style={styles.projectLanguageText}>{language}</Text>
-                      </View>
-                    ))}
-                  </View>
-                  
-                  <View style={styles.projectFooter}>
-                    <View style={styles.projectCollaborators}>
-                      <Users size={14} color={Colors.light.textLight} />
-                      <Text style={styles.projectFooterText}>{project.collaborators} collaborators</Text>
-                    </View>
-                    <View style={styles.projectLastUpdated}>
-                      <Clock size={14} color={Colors.light.textLight} />
-                      <Text style={styles.projectFooterText}>{project.lastUpdated}</Text>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </View>
-            
-            {/* Tools */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Tools</Text>
-              
-              <TouchableOpacity style={styles.toolCard}>
-                <View style={styles.toolIcon}>
-                  <FileText size={24} color={Colors.light.white} />
-                </View>
-                <View style={styles.toolInfo}>
-                  <Text style={styles.toolName}>Generate CV</Text>
-                  <Text style={styles.toolDescription}>Create a professional CV based on your profile data</Text>
-                </View>
-                <ChevronRight size={16} color={Colors.light.darkGray} />
-              </TouchableOpacity>
-              
-              <TouchableOpacity style={styles.toolCard}>
-                <View style={[styles.toolIcon, { backgroundColor: '#4CAF50' }]}>
-                  <Code size={24} color={Colors.light.white} />
-                </View>
-                <View style={styles.toolInfo}>
-                  <Text style={styles.toolName}>Development Environments</Text>
-                  <Text style={styles.toolDescription}>Access specialized coding environments</Text>
-                </View>
-                <ChevronRight size={16} color={Colors.light.darkGray} />
-              </TouchableOpacity>
-            </View>
+
+        {/* Boutons d'action */}
+        {editing && (
+          <View style={styles.actionButtons}>
+            <TouchableOpacity
+              style={styles.saveButton}
+              onPress={saveProfile}
+              disabled={saving}
+            >
+              {saving ? (
+                <ActivityIndicator size="small" color={Colors.white} />
+              ) : (
+                <>
+                  <Save size={20} color={Colors.white} />
+                  <Text style={styles.saveButtonText}>Sauvegarder</Text>
+                </>
+              )}
+            </TouchableOpacity>
           </View>
         )}
-        
-        {activeTab === 'colleagues' && (
-          <View style={styles.emptyState}>
-            <Users size={48} color={Colors.light.lightGray} />
-            <Text style={styles.emptyStateTitle}>No colleagues yet</Text>
-            <Text style={styles.emptyStateSubtitle}>Connect with other students to collaborate on projects</Text>
-          </View>
-        )}
-        
-        {activeTab === 'chat' && (
-          <View style={styles.emptyState}>
-            <MessageCircle size={48} color={Colors.light.lightGray} />
-            <Text style={styles.emptyStateTitle}>No conversations yet</Text>
-            <Text style={styles.emptyStateSubtitle}>Start chatting with colleagues and clubs</Text>
-          </View>
-        )}
+
+        <View style={styles.actionButtons}>
+          <TouchableOpacity style={styles.signOutButton} onPress={signOut}>
+            <Text style={styles.signOutButtonText}>Se déconnecter</Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </SafeAreaView>
-  );
+  )
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.light.white,
+    backgroundColor: Colors.background,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: Colors.gray,
+  },
+  scrollView: {
+    flex: 1,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: Colors.white,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.light.lightGray,
+    borderBottomColor: Colors.lightGray,
   },
-  profileSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: Colors.black,
   },
-  profileImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    marginRight: 12,
-  },
-  profileInfo: {
-    justifyContent: 'center',
-  },
-  profileName: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: Colors.light.textDark,
-    marginBottom: 2,
-  },
-  profileMatricule: {
-    fontSize: 14,
-    color: Colors.light.textLight,
-    marginBottom: 2,
-  },
-  profileSchool: {
-    fontSize: 14,
-    color: Colors.light.gold,
-  },
-  settingsButton: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 20,
-    backgroundColor: Colors.light.background,
-  },
-  tabsContainer: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.light.lightGray,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  activeTab: {
-    borderBottomWidth: 2,
-    borderBottomColor: Colors.light.gold,
-  },
-  tabText: {
-    fontSize: 16,
-    color: Colors.light.textLight,
-  },
-  activeTabText: {
-    color: Colors.light.gold,
-    fontWeight: '600',
-  },
-  content: {
-    flex: 1,
-  },
-  section: {
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.light.lightGray,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: Colors.light.textDark,
-  },
-  addButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: Colors.light.gold,
+  editButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     borderRadius: 8,
+    backgroundColor: Colors.primary,
   },
-  addButtonText: {
-    fontSize: 14,
-    color: Colors.light.white,
-    fontWeight: '600',
+  editButtonText: {
+    color: Colors.white,
+    fontWeight: "600",
   },
-  languagesContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  photoSection: {
+    alignItems: "center",
+    paddingVertical: 32,
+    backgroundColor: Colors.white,
+    marginBottom: 20,
   },
-  languageChip: {
-    backgroundColor: Colors.light.background,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    marginRight: 8,
+  photoContainer: {
+    position: "relative",
+    marginBottom: 16,
+  },
+  profilePhoto: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+  },
+  placeholderPhoto: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: Colors.lightGray,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  cameraButton: {
+    position: "absolute",
+    bottom: 0,
+    right: 0,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.primary,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 3,
+    borderColor: Colors.white,
+  },
+  userName: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: Colors.black,
+    marginBottom: 4,
+  },
+  userEmail: {
+    fontSize: 16,
+    color: Colors.gray,
+  },
+  infoSection: {
+    backgroundColor: Colors.white,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    marginBottom: 20,
+  },
+  inputGroup: {
+    marginBottom: 20,
+  },
+  label: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: Colors.black,
     marginBottom: 8,
   },
-  languageText: {
-    fontSize: 14,
-    color: Colors.light.textDark,
+  input: {
+    borderWidth: 1,
+    borderColor: Colors.lightGray,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: Colors.black,
+    backgroundColor: Colors.white,
   },
-  projectCard: {
-    backgroundColor: Colors.light.white,
-    borderRadius: 12,
-    padding: 16,
+  inputDisabled: {
+    backgroundColor: Colors.background,
+    color: Colors.darkGray,
+  },
+  actionButtons: {
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  saveButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Colors.success,
+    paddingVertical: 16,
+    borderRadius: 8,
     marginBottom: 12,
-    shadowColor: Colors.light.textDark,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
   },
-  projectHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  projectName: {
+  saveButtonText: {
+    color: Colors.white,
     fontSize: 16,
-    fontWeight: '600',
-    color: Colors.light.textDark,
+    fontWeight: "600",
+    marginLeft: 8,
   },
-  projectDescription: {
-    fontSize: 14,
-    color: Colors.light.textLight,
-    marginBottom: 8,
+  signOutButton: {
+    backgroundColor: Colors.danger,
+    paddingVertical: 16,
+    borderRadius: 8,
+    alignItems: "center",
   },
-  projectLanguages: {
-    flexDirection: 'row',
-    marginBottom: 8,
-  },
-  projectLanguageChip: {
-    backgroundColor: Colors.light.gold + '20', // 20% opacity
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-    marginRight: 6,
-  },
-  projectLanguageText: {
-    fontSize: 12,
-    color: Colors.light.gold,
-    fontWeight: '500',
-  },
-  projectFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  projectCollaborators: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  projectLastUpdated: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  projectFooterText: {
-    fontSize: 12,
-    color: Colors.light.textLight,
-    marginLeft: 4,
-  },
-  toolCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.light.white,
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 12,
-    shadowColor: Colors.light.textDark,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  toolIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: Colors.light.gold,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  toolInfo: {
-    flex: 1,
-  },
-  toolName: {
+  signOutButtonText: {
+    color: Colors.white,
     fontSize: 16,
-    fontWeight: '600',
-    color: Colors.light.textDark,
-    marginBottom: 2,
+    fontWeight: "600",
   },
-  toolDescription: {
-    fontSize: 14,
-    color: Colors.light.textLight,
-  },
-  emptyState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-    minHeight: 300,
-  },
-  emptyStateTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: Colors.light.textDark,
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptyStateSubtitle: {
-    fontSize: 14,
-    color: Colors.light.textLight,
-    textAlign: 'center',
-  },
-});
+})

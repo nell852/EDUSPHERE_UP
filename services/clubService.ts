@@ -183,57 +183,105 @@ class ClubService {
       const { data: user } = await supabase.auth.getUser()
       if (!user.user) throw new Error("Utilisateur non connecté")
 
-      // Vérifier si une demande n'existe pas déjà
-      const { data: existingRequest } = await supabase
-        .from("demandes_adhesion")
-        .select("*")
-        .eq("club_id", clubId)
-        .eq("demandeur_id", user.user.id)
-        .eq("statut", "en_attente")
-        .single()
+      console.log("=== DÉBUT DEMANDE D'ADHÉSION (CLUBSERVICE) ===")
+      console.log("Club ID:", clubId)
+      console.log("Demandeur ID:", user.user.id)
 
-      if (existingRequest) {
-        throw new Error("Vous avez déjà une demande en attente pour ce club")
-      }
+      // Supprimer toute demande existante d'abord (pour éviter les doublons)
+      console.log("Suppression des demandes existantes...")
+      await supabase.from("demandes_adhesion").delete().eq("club_id", clubId).eq("demandeur_id", user.user.id)
+
+      // Attendre un peu pour que la suppression soit effective
+      await new Promise((resolve) => setTimeout(resolve, 500))
 
       // Créer la demande d'adhésion
-      const { error: requestError } = await supabase.from("demandes_adhesion").insert({
-        club_id: clubId,
-        demandeur_id: user.user.id,
-        message: message,
-        statut: "en_attente",
-      })
+      console.log("Création de la demande d'adhésion...")
+      const { data: newRequest, error: requestError } = await supabase
+        .from("demandes_adhesion")
+        .insert({
+          club_id: clubId,
+          demandeur_id: user.user.id,
+          message: message,
+          statut: "en_attente",
+        })
+        .select()
+        .single()
 
-      if (requestError) throw requestError
+      if (requestError) {
+        console.error("Erreur lors de la création de la demande:", requestError)
+        throw requestError
+      }
 
-      // Récupérer les infos du club et du demandeur
-      const { data: club } = await supabase.from("clubs").select("nom, proprietaire_id").eq("id", clubId).single()
+      console.log("Demande créée:", newRequest)
 
-      const { data: demandeur } = await supabase
+      // Récupérer les infos du club
+      console.log("Récupération des infos du club...")
+      const { data: club, error: clubError } = await supabase
+        .from("clubs")
+        .select("nom, proprietaire_id")
+        .eq("id", clubId)
+        .single()
+
+      if (clubError) {
+        console.error("Erreur lors de la récupération du club:", clubError)
+        throw clubError
+      }
+
+      console.log("Club trouvé:", club)
+
+      // Récupérer les infos du demandeur
+      console.log("Récupération des infos du demandeur...")
+      const { data: demandeur, error: demandeurError } = await supabase
         .from("utilisateurs")
         .select("nom, prenom")
         .eq("id", user.user.id)
         .single()
 
-      console.log("Club trouvé:", club)
+      if (demandeurError) {
+        console.error("Erreur lors de la récupération du demandeur:", demandeurError)
+        throw demandeurError
+      }
+
       console.log("Demandeur trouvé:", demandeur)
 
       if (club && demandeur && club.proprietaire_id) {
+        console.log("Création de la notification...")
+        console.log("Propriétaire du club:", club.proprietaire_id)
+
         // Créer une notification pour le propriétaire du club
-        const { data: notification, error: notifError } = await supabase.from("notifications").insert({
+        const notificationData = {
           utilisateur_id: club.proprietaire_id,
           type: "demande_adhesion",
           message: `${demandeur.nom} ${demandeur.prenom} souhaite rejoindre votre club "${club.nom}"`,
           source: "club",
           url_cible: `/clubs/${clubId}/demandes`,
-        }).select()
+          read: false,
+        }
+
+        console.log("Données de notification:", notificationData)
+
+        // Maintenant que RLS est désactivé, cela devrait fonctionner
+        const { data: notification, error: notifError } = await supabase
+          .from("notifications")
+          .insert(notificationData)
+          .select()
+          .single()
 
         if (notifError) {
           console.error("Erreur lors de la création de la notification:", notifError)
+          console.error("Détails de l'erreur:", notifError.message, notifError.details, notifError.hint)
+          // Ne pas faire échouer toute l'opération pour une erreur de notification
         } else {
-          console.log("Notification créée:", notification)
+          console.log("Notification créée avec succès:", notification)
         }
+      } else {
+        console.log("Données manquantes pour créer la notification:")
+        console.log("- Club:", !!club)
+        console.log("- Demandeur:", !!demandeur)
+        console.log("- Propriétaire ID:", club?.proprietaire_id)
       }
+
+      console.log("=== FIN DEMANDE D'ADHÉSION (CLUBSERVICE) ===")
     } catch (error) {
       console.error("Erreur lors de la demande d'adhésion:", error)
       throw error
@@ -347,7 +395,7 @@ class ClubService {
       const { data: club } = await supabase.from("clubs").select("nom").eq("id", request.club_id).single()
 
       if (club) {
-        await supabase.from("notifications").insert({
+        const { error: notifError } = await supabase.from("notifications").insert({
           utilisateur_id: request.demandeur_id,
           type: "reponse_adhesion",
           message:
@@ -356,7 +404,12 @@ class ClubService {
               : `Votre demande d'adhésion au club "${club.nom}" a été refusée.`,
           source: "club",
           url_cible: `/clubs/${request.club_id}`,
+          read: false,
         })
+
+        if (notifError) {
+          console.error("Erreur lors de la création de la notification de réponse:", notifError)
+        }
       }
     } catch (error) {
       console.error("Erreur lors du traitement de la demande:", error)
