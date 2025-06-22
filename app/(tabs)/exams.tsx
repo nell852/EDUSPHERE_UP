@@ -1,12 +1,32 @@
-import { useState } from 'react';
-import { StyleSheet, View, Text, Image, FlatList, TouchableOpacity, ScrollView } from 'react-native';
+import { useState, useEffect } from 'react';
+import { StyleSheet, View, Text, FlatList, TouchableOpacity, TextInput, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Search, Filter, MoveVertical as MoreVertical } from 'lucide-react-native';
+import { Search, Share2, HelpCircle, FileText } from 'lucide-react-native';
 import Colors from '@/constants/Colors';
 import SchoolSelector from '@/components/exams/SchoolSelector';
 import { StatusBar } from 'expo-status-bar';
+import { supabase } from '@/lib/supabase';
+import { useNavigation } from 'expo-router';
+import * as Sharing from 'expo-sharing';
 
-const LEVELS = [
+interface Exam {
+  id: string;
+  ecole: string;
+  niveau: string;
+  matiere: string;
+  title: string;
+  annee: string;
+  difficulte: string;
+  contenu_url: string;
+  created_at: string;
+}
+
+interface Level {
+  id: string;
+  name: string;
+}
+
+const ALL_LEVELS: Level[] = [
   { id: 'b1', name: 'B1' },
   { id: 'b2', name: 'B2' },
   { id: 'b3', name: 'B3' },
@@ -14,154 +34,232 @@ const LEVELS = [
   { id: 'm2', name: 'M2' },
 ];
 
-const EXAMS = [
-  {
-    id: '1',
-    title: 'Database Systems Final',
-    subject: 'Database Systems',
-    year: '2024',
-    level: 'b3',
-    school: 'cs',
-    isNew: true,
-  },
-  {
-    id: '2',
-    title: 'Network Security Midterm',
-    subject: 'Network Security',
-    year: '2024',
-    level: 'm1',
-    school: 'cs',
-    isNew: true,
-  },
-  {
-    id: '3',
-    title: 'Advanced Algorithms',
-    subject: 'Algorithms',
-    year: '2023',
-    level: 'b3',
-    school: 'cs',
-    isNew: false,
-  },
-  {
-    id: '4',
-    title: 'Machine Learning Final',
-    subject: 'Machine Learning',
-    year: '2023',
-    level: 'm1',
-    school: 'cs',
-    isNew: false,
-  },
-];
-
 export default function ExamsScreen() {
-  const [selectedSchool, setSelectedSchool] = useState('cs');
-  const [selectedLevel, setSelectedLevel] = useState('b3');
-  
-  const filteredExams = EXAMS.filter(
-    exam => exam.school === selectedSchool && exam.level === selectedLevel
+  const [selectedSchool, setSelectedSchool] = useState<string>('');
+  const [selectedLevel, setSelectedLevel] = useState<string>('');
+  const [exams, setExams] = useState<Exam[]>([]);
+  const [schools, setSchools] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [loading, setLoading] = useState<boolean>(true);
+  const navigation = useNavigation();
+
+  useEffect(() => {
+    async function fetchExamsAndSchools() {
+      setLoading(true);
+      try {
+        const { data: examsData, error: examsError } = await supabase
+          .from('examens')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (examsError) throw examsError;
+        setExams(examsData || []);
+
+        const { data: schoolsData, error: schoolsError } = await supabase
+          .from('examens')
+          .select('ecole');
+        
+        if (schoolsError) throw schoolsError;
+        const uniqueSchools = Array.from(new Set(schoolsData?.map(item => item.ecole) || []));
+        setSchools(uniqueSchools);
+      } catch (error) {
+        console.error('Error fetching data:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchExamsAndSchools();
+  }, []);
+
+  useEffect(() => {
+    setSelectedLevel('');
+  }, [selectedSchool]);
+
+  const getAvailableLevels = (): Level[] => {
+    if (!selectedSchool) return ALL_LEVELS;
+    
+    const normalizeLevel = (level: string) => level.trim().toLowerCase();
+    
+    const levelsInSchool = exams
+      .filter(exam => exam.ecole === selectedSchool)
+      .map(exam => normalizeLevel(exam.niveau))
+      .filter((value, index, self) => self.indexOf(value) === index);
+
+    return ALL_LEVELS.filter(level => 
+      levelsInSchool.includes(normalizeLevel(level.id)) ||
+      levelsInSchool.includes(normalizeLevel(level.name))
+    );
+  };
+
+  const handleOpenExam = (exam: Exam) => {
+    navigation.navigate({
+      name: 'ExamViewerScreen',
+      params: { pdfUrl: exam.contenu_url, title: exam.matiere },
+    } as never);
+  };
+
+  const handleShareExam = async (exam: Exam) => {
+    try {
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(exam.contenu_url, {
+          dialogTitle: `Share ${exam.matiere} - ${exam.ecole}`,
+        });
+      } else {
+        alert('Sharing is not available on this device');
+      }
+    } catch (error) {
+      console.error('Error sharing exam:', error);
+      alert('Failed to share exam');
+    }
+  };
+
+  const handleAIHelp = (exam: Exam) => {
+    // Placeholder for AI help functionality
+    // This would need to integrate with an external AI service
+    alert('AI Help feature coming soon!');
+    // TODO: Implement API call to external AI service with exam.contenu_url
+  };
+
+  const filteredExams = exams.filter(
+    exam =>
+      (selectedSchool === '' || exam.ecole === selectedSchool) &&
+      (selectedLevel === '' || exam.niveau.toLowerCase() === selectedLevel.toLowerCase()) &&
+      (exam.matiere.toLowerCase().includes(searchQuery.toLowerCase()) ||
+       exam.title.toLowerCase().includes(searchQuery.toLowerCase()))
   );
-  
-  const renderLevelItem = ({ item }) => (
+
+  const renderLevelItem = ({ item }: { item: Level }) => (
     <TouchableOpacity
       style={[
         styles.levelTab,
-        selectedLevel === item.id && styles.selectedLevelTab
+        selectedLevel === item.id && styles.selectedLevelTab,
       ]}
       onPress={() => setSelectedLevel(item.id)}
     >
       <Text
         style={[
           styles.levelText,
-          selectedLevel === item.id && styles.selectedLevelText
+          selectedLevel === item.id && styles.selectedLevelText,
         ]}
       >
         {item.name}
       </Text>
     </TouchableOpacity>
   );
-  
-  const renderExamItem = ({ item }) => (
-    <TouchableOpacity style={styles.examCard}>
-      <View style={styles.examHeader}>
-        <Text style={styles.examTitle}>{item.title}</Text>
-        <TouchableOpacity>
-          <MoreVertical size={20} color={Colors.light.darkGray} />
+
+  const renderExamItem = ({ item }: { item: Exam }) => (
+    <View style={styles.examCard}>
+      <TouchableOpacity 
+        style={styles.examContent}
+        onPress={() => handleOpenExam(item)}
+      >
+        <View style={styles.examHeader}>
+          <Text style={styles.examTitle}>{item.matiere}</Text>
+          <Text style={styles.examSchool}>{item.ecole} - {item.niveau}</Text>
+        </View>
+        <View style={styles.examDetails}>
+          <View style={styles.examDetailItem}>
+            <Text style={styles.examDetailLabel}>Year:</Text>
+            <Text style={styles.examDetailValue}>{item.annee}</Text>
+          </View>
+          <View style={styles.examDetailItem}>
+            <Text style={styles.examDetailLabel}>Difficulty:</Text>
+            <Text style={styles.examDetailValue}>{item.difficulte}</Text>
+          </View>
+        </View>
+        {item.created_at && new Date(item.created_at).getTime() > (Date.now() - 7 * 24 * 60 * 60 * 1000) && (
+          <View style={styles.newBadge}>
+            <Text style={styles.newBadgeText}>NEW</Text>
+          </View>
+        )}
+      </TouchableOpacity>
+      <View style={styles.actionButtons}>
+        <TouchableOpacity 
+          style={styles.actionButton} 
+          onPress={() => handleOpenExam(item)}
+        >
+          <FileText size={20} color={Colors.light.tint} />
+          <Text style={styles.actionButtonText}>Open</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.actionButton} 
+          onPress={() => handleShareExam(item)}
+        >
+          <Share2 size={20} color={Colors.light.tint} />
+          <Text style={styles.actionButtonText}>Share</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.actionButton} 
+          onPress={() => handleAIHelp(item)}
+        >
+          <HelpCircle size={20} color={Colors.light.tint} />
+          <Text style={styles.actionButtonText}>AI Help</Text>
         </TouchableOpacity>
       </View>
-      
-      <View style={styles.examDetails}>
-        <View style={styles.examDetailItem}>
-          <Text style={styles.examDetailLabel}>Subject:</Text>
-          <Text style={styles.examDetailValue}>{item.subject}</Text>
-        </View>
-        <View style={styles.examDetailItem}>
-          <Text style={styles.examDetailLabel}>Year:</Text>
-          <Text style={styles.examDetailValue}>{item.year}</Text>
-        </View>
-      </View>
-      
-      <View style={styles.examActions}>
-        <TouchableOpacity style={styles.primaryButton}>
-          <Text style={styles.primaryButtonText}>OPEN</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.secondaryButton}>
-          <Text style={styles.secondaryButtonText}>GET AI HELP</Text>
-        </TouchableOpacity>
-      </View>
-      
-      {item.isNew && (
-        <View style={styles.newBadge}>
-          <Text style={styles.newBadgeText}>NEW</Text>
-        </View>
-      )}
-    </TouchableOpacity>
+    </View>
   );
-  
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar style="auto" />
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Exams</Text>
+        <TouchableOpacity onPress={() => navigation.navigate({ name: 'upload-exam' } as never)}>
+          <Text style={styles.uploadButtonText}>Upload</Text>
+        </TouchableOpacity>
+      </View>
       
-      {/* School selector */}
-      <SchoolSelector
-        selectedSchool={selectedSchool}
-        onSelectSchool={setSelectedSchool}
+      <SchoolSelector 
+        selectedSchool={selectedSchool} 
+        onSelectSchool={setSelectedSchool} 
+        schools={schools} 
       />
       
-      {/* Level tabs */}
       <View style={styles.levelTabsContainer}>
         <FlatList
-          data={LEVELS}
+          data={getAvailableLevels()}
           renderItem={renderLevelItem}
           keyExtractor={(item) => item.id}
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.levelTabs}
         />
+        {selectedSchool && getAvailableLevels().length === 0 && (
+          <Text style={styles.noLevelsText}>Loading levels...</Text>
+        )}
       </View>
       
-      {/* Search and filter */}
       <View style={styles.searchContainer}>
         <View style={styles.searchInputContainer}>
           <Search size={20} color={Colors.light.darkGray} />
-          <Text style={styles.searchPlaceholder}>Search exams</Text>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search exams..."
+            placeholderTextColor={Colors.light.darkGray}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
         </View>
-        <TouchableOpacity style={styles.filterButton}>
-          <Filter size={20} color={Colors.light.gold} />
-        </TouchableOpacity>
       </View>
       
-      {/* Exams list */}
-      <FlatList
-        data={filteredExams}
-        renderItem={renderExamItem}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.examsList}
-        ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyStateText}>No exams found for this selection</Text>
-          </View>
-        }
-      />
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading exams...</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={filteredExams}
+          renderItem={renderExamItem}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.examsList}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateText}>No exams found</Text>
+              <Text style={styles.emptyStateSubText}>Try changing your filters</Text>
+            </View>
+          }
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -169,9 +267,30 @@ export default function ExamsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: Colors.light.background,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
     backgroundColor: Colors.light.white,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.light.lightGray,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: Colors.light.textDark,
+  },
+  uploadButtonText: {
+    color: Colors.light.tint,
+    fontSize: 16,
+    fontWeight: '500',
   },
   levelTabsContainer: {
+    backgroundColor: Colors.light.white,
+    paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: Colors.light.lightGray,
   },
@@ -179,32 +298,34 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   levelTab: {
-    paddingVertical: 12,
     paddingHorizontal: 16,
+    paddingVertical: 8,
     marginRight: 8,
+    borderRadius: 16,
+    backgroundColor: Colors.light.lightGray,
   },
   selectedLevelTab: {
-    borderBottomWidth: 2,
-    borderBottomColor: Colors.light.gold,
+    backgroundColor: Colors.light.tint,
   },
   levelText: {
-    fontSize: 16,
-    color: Colors.light.textLight,
+    fontSize: 14,
+    color: Colors.light.textDark,
   },
   selectedLevelText: {
-    color: Colors.light.gold,
+    color: Colors.light.white,
     fontWeight: '600',
   },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  noLevelsText: {
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.light.lightGray,
+    paddingVertical: 8,
+    color: Colors.light.textLight,
+    fontStyle: 'italic',
+  },
+  searchContainer: {
+    padding: 16,
+    backgroundColor: Colors.light.white,
   },
   searchInputContainer: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.light.background,
@@ -212,21 +333,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
-  searchPlaceholder: {
+  searchInput: {
+    flex: 1,
     marginLeft: 8,
-    color: Colors.light.darkGray,
     fontSize: 16,
-  },
-  filterButton: {
-    marginLeft: 12,
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: Colors.light.white,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: Colors.light.lightGray,
+    color: Colors.light.textDark,
   },
   examsList: {
     padding: 16,
@@ -234,78 +345,56 @@ const styles = StyleSheet.create({
   examCard: {
     backgroundColor: Colors.light.white,
     borderRadius: 12,
-    padding: 16,
     marginBottom: 16,
     shadowColor: Colors.light.textDark,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 2,
   },
+  examContent: {
+    padding: 16,
+  },
   examHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
     marginBottom: 12,
   },
   examTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: Colors.light.textDark,
-    flex: 1,
+  },
+  examSchool: {
+    fontSize: 14,
+    color: Colors.light.textLight,
+    marginTop: 4,
   },
   examDetails: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     marginBottom: 16,
   },
   examDetailItem: {
     flexDirection: 'row',
-    marginBottom: 4,
+    marginRight: 16,
+    marginBottom: 8,
   },
   examDetailLabel: {
     fontSize: 14,
     color: Colors.light.textLight,
-    width: 70,
+    marginRight: 4,
   },
   examDetailValue: {
     fontSize: 14,
     color: Colors.light.textDark,
     fontWeight: '500',
   },
-  examActions: {
-    flexDirection: 'row',
-  },
-  primaryButton: {
-    flex: 1,
-    backgroundColor: Colors.light.gold,
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginRight: 8,
-  },
-  primaryButtonText: {
-    color: Colors.light.white,
-    fontWeight: '600',
-  },
-  secondaryButton: {
-    flex: 1,
-    backgroundColor: Colors.light.white,
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.light.gold,
-  },
-  secondaryButtonText: {
-    color: Colors.light.gold,
-    fontWeight: '600',
-  },
   newBadge: {
     position: 'absolute',
     top: 12,
-    right: 48,
-    backgroundColor: Colors.light.gold,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    right: 12,
+    backgroundColor: Colors.light.tint,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
     borderRadius: 4,
   },
   newBadgeText: {
@@ -313,12 +402,45 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
   },
+  actionButtons: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: Colors.light.lightGray,
+    padding: 8,
+  },
+  actionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    gap: 4,
+  },
+  actionButtonText: {
+    fontSize: 12,
+    color: Colors.light.tint,
+    fontWeight: '500',
+  },
   emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
+    padding: 40,
   },
   emptyStateText: {
+    fontSize: 16,
+    color: Colors.light.textDark,
+    marginBottom: 8,
+  },
+  emptyStateSubText: {
+    fontSize: 14,
+    color: Colors.light.textLight,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
     fontSize: 16,
     color: Colors.light.textLight,
   },

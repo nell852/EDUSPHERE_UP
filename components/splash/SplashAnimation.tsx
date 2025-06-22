@@ -173,7 +173,7 @@ export default function SplashAnimation() {
       >
         <Image
           source={{
-            uri: 'https://images.pexels.com/photos/267885/pexels-photo-267885.jpeg?auto=compress&cs=tinysrgb&w=600',
+            uri: '@/assets/images/CDP-logo-dore-PNG-1536x658.png',
           }}
           style={styles.finalLogo}
           resizeMode="cover"

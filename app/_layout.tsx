@@ -37,6 +37,8 @@ export default function RootLayout() {
         <Stack.Screen name="auth/signup" />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="PDFViewerScreen" options={{ title: 'Visionneuse PDF' }} />
+        <Stack.Screen name="upload-exam" options={{ title: 'Upload Exam' }} />
+        <Stack.Screen name="ExamViewerScreen" options={{ title: 'Visualiseur d\'Examen' }} />
         <Stack.Screen name="+not-found" />
       </Stack>
       <StatusBar style="auto" />

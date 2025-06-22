@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "bolt-expo-nativewind",
-    "slug": "bolt-expo-nativewind",
+    "name": "Edusphere-expo-nativewind",
+    "slug": "Edusphere-expo-nativewind",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -30,6 +30,10 @@
       "eas": {
         "projectId": "661787f3-afd9-4fab-8aa9-06452e66cd81"
       }
-    }
+    },
+    "android": {
+      "package": "com.tonentreprise.edusphere"
+    },
+    "owner": "nellito"
   }
 }

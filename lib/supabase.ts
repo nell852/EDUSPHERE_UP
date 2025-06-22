@@ -3,8 +3,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import 'react-native-url-polyfill/auto';
 
 // Clés Supabase (assurez-vous que ce sont les bonnes valeurs)
-const supabaseUrl = 'https://nrwngoruunmsvvhsxbue.supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5yd25nb3J1dW5tc3Z2aHN4YnVlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg3Nzc5MjIsImV4cCI6MjA2NDM1MzkyMn0.2i1gBP4kqCt-eVMhcPFcbUk-Hc7JXFLGyDZ92I0YNVk';
+const supabaseUrl = 'https://ppfvnxscqdlhnpvwexjw.supabase.co';
+const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBwZnZueHNjcWRsaG5wdndleGp3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTA1ODMxMjAsImV4cCI6MjA2NjE1OTEyMH0.j5LEupFPzNgwwDticLnVoFoXFNtsotZA9BEfGFaDNNM';
 
 // Configuration du client Supabase
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {

@@ -1,51 +1,21 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react'; // Ajouté useEffect pour le log (optionnel)
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Image } from 'react-native';
 import Colors from '@/constants/Colors';
-
-const SCHOOLS = [
-  {
-    id: 'cs',
-    name: 'Computer Science',
-    logo: 'https://images.pexels.com/photos/2448232/pexels-photo-2448232.jpeg?auto=compress&cs=tinysrgb&w=600',
-  },
-  {
-    id: 'business',
-    name: 'Business',
-    logo: 'https://images.pexels.com/photos/936137/pexels-photo-936137.jpeg?auto=compress&cs=tinysrgb&w=600',
-  },
-  {
-    id: 'engineering',
-    name: 'Engineering',
-    logo: 'https://images.pexels.com/photos/3862632/pexels-photo-3862632.jpeg?auto=compress&cs=tinysrgb&w=600',
-  },
-  {
-    id: 'arts',
-    name: 'Arts & Design',
-    logo: 'https://images.pexels.com/photos/20967/pexels-photo.jpg?auto=compress&cs=tinysrgb&w=600',
-  },
-  {
-    id: 'medicine',
-    name: 'Medicine',
-    logo: 'https://images.pexels.com/photos/4226140/pexels-photo-4226140.jpeg?auto=compress&cs=tinysrgb&w=600',
-  },
-  {
-    id: 'law',
-    name: 'Law',
-    logo: 'https://images.pexels.com/photos/5668859/pexels-photo-5668859.jpeg?auto=compress&cs=tinysrgb&w=600',
-  },
-  {
-    id: 'science',
-    name: 'Science',
-    logo: 'https://images.pexels.com/photos/2280571/pexels-photo-2280571.jpeg?auto=compress&cs=tinysrgb&w=600',
-  },
-];
 
 type SchoolSelectorProps = {
   selectedSchool: string;
   onSelectSchool: (schoolId: string) => void;
+  schools: string[] | undefined; // Permettre undefined comme type
 };
 
-export default function SchoolSelector({ selectedSchool, onSelectSchool }: SchoolSelectorProps) {
+export default function SchoolSelector({ selectedSchool, onSelectSchool, schools }: SchoolSelectorProps) {
+  useEffect(() => {
+    console.log('Schools received in SchoolSelector:', schools); // Log pour débogage
+  }, [schools]);
+
+  // Traiter schools comme un tableau vide si undefined
+  const safeSchools = schools || [];
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Select School</Text>
@@ -54,27 +24,35 @@ export default function SchoolSelector({ selectedSchool, onSelectSchool }: Schoo
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.schoolsList}
       >
-        {SCHOOLS.map((school) => (
-          <TouchableOpacity
-            key={school.id}
-            style={[
-              styles.schoolItem,
-              selectedSchool === school.id && styles.selectedSchoolItem
-            ]}
-            onPress={() => onSelectSchool(school.id)}
-          >
-            <Image source={{ uri: school.logo }} style={styles.schoolLogo} />
-            <Text 
-              style={[
-                styles.schoolName,
-                selectedSchool === school.id && styles.selectedSchoolName
-              ]}
-              numberOfLines={2}
-            >
-              {school.name}
-            </Text>
-          </TouchableOpacity>
-        ))}
+        {safeSchools.length > 0 ? (
+          safeSchools.map((schoolId) => {
+            // Utiliser des logos par défaut ou une logique pour associer des logos si disponible
+            const school = { id: schoolId, name: schoolId, logo: `https://via.placeholder.com/64?text=${schoolId}` };
+            return (
+              <TouchableOpacity
+                key={school.id}
+                style={[
+                  styles.schoolItem,
+                  selectedSchool === school.id && styles.selectedSchoolItem,
+                ]}
+                onPress={() => onSelectSchool(school.id)}
+              >
+                <Image source={{ uri: school.logo }} style={styles.schoolLogo} />
+                <Text
+                  style={[
+                    styles.schoolName,
+                    selectedSchool === school.id && styles.selectedSchoolName,
+                  ]}
+                  numberOfLines={2}
+                >
+                  {school.name}
+                </Text>
+              </TouchableOpacity>
+            );
+          })
+        ) : (
+          <Text style={styles.noSchoolsText}>No schools available</Text>
+        )}
       </ScrollView>
     </View>
   );
@@ -124,5 +102,10 @@ const styles = StyleSheet.create({
   selectedSchoolName: {
     color: Colors.light.gold,
     fontWeight: '600',
+  },
+  noSchoolsText: {
+    fontSize: 14,
+    color: Colors.light.textLight,
+    padding: 8,
   },
 });

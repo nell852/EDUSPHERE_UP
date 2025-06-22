@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Button, Alert, StyleSheet } from 'react-native';
+import { View, Text, TextInput, Button, Alert, StyleSheet, ScrollView } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { supabase } from '@/lib/supabase';
 import Colors from '@/constants/Colors';
@@ -12,6 +12,8 @@ interface BookData {
   description: string;
   particularite: string;
   auteur: string;
+  popularite?: number; // Champ optionnel pour définir une popularité initiale
+  niveau: string; // Champ pour le niveau
 }
 
 // Interface pour le résultat de DocumentPicker, basée sur DocumentPickerAsset
@@ -30,6 +32,8 @@ export default function AdminUploadScreen() {
     description: '',
     particularite: '',
     auteur: '',
+    popularite: 0, // Valeur par défaut
+    niveau: '', // Initialisation du champ niveau
   });
   const [pdfFile, setPdfFile] = useState<DocumentAsset | null>(null);
   const [coverImage, setCoverImage] = useState<DocumentAsset | null>(null);
@@ -109,8 +113,9 @@ export default function AdminUploadScreen() {
           couverture_url: coverUrl,
           document_url: documentUrl,
           particularite: bookData.particularite || null,
-          popularite: 0,
+          popularite: bookData.popularite || 0,
           auteur: bookData.auteur || 'Auteur inconnu',
+          niveau: bookData.niveau || null, // Champ niveau
         },
       ]).select().single();
 
@@ -169,7 +174,14 @@ export default function AdminUploadScreen() {
 
   // Gérer l'upload
   const handleUpload = async () => {
-    if (!pdfFile || !coverImage || !bookData.titre || !bookData.domaine || !bookData.auteur) {
+    if (
+      !pdfFile ||
+      !coverImage ||
+      !bookData.titre ||
+      !bookData.domaine ||
+      !bookData.auteur ||
+      !bookData.niveau
+    ) {
       Alert.alert('Erreur', 'Veuillez remplir tous les champs requis et sélectionner les fichiers.');
       return;
     }
@@ -188,6 +200,8 @@ export default function AdminUploadScreen() {
             description: '',
             particularite: '',
             auteur: '',
+            popularite: 0,
+            niveau: '',
           });
           setPdfFile(null);
           setCoverImage(null);
@@ -205,59 +219,83 @@ export default function AdminUploadScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Ajouter un livre</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Titre"
-        value={bookData.titre}
-        onChangeText={(text) => setBookData({ ...bookData, titre: text })}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Domaine (ex: cybersécurité)"
-        value={bookData.domaine}
-        onChangeText={(text) => setBookData({ ...bookData, domaine: text })}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Sous-domaine (optionnel)"
-        value={bookData.sousDomaine}
-        onChangeText={(text) => setBookData({ ...bookData, sousDomaine: text })}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Description (optionnel)"
-        value={bookData.description}
-        onChangeText={(text) => setBookData({ ...bookData, description: text })}
-        multiline
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Particularité (ex: Interdiction de capture, optionnel)"
-        value={bookData.particularite}
-        onChangeText={(text) => setBookData({ ...bookData, particularite: text })}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Auteur"
-        value={bookData.auteur}
-        onChangeText={(text) => setBookData({ ...bookData, auteur: text })}
-      />
-      <Button title="Choisir PDF" onPress={pickPdf} color={Colors.light.gold} />
-      <Text style={styles.fileText}>{pdfFile ? pdfFile.name : 'Aucun PDF sélectionné'}</Text>
-      <Button title="Choisir couverture" onPress={pickCover} color={Colors.light.gold} />
-      <Text style={styles.fileText}>{coverImage ? coverImage.name : 'Aucune image sélectionnée'}</Text>
-      <Button title="Uploader" onPress={handleUpload} color={Colors.light.gold} />
-    </View>
+    <ScrollView
+      style={styles.scrollContainer}
+      contentContainerStyle={styles.contentContainer}
+      keyboardShouldPersistTaps="handled" // Permet de gérer les taps sur le formulaire sans fermer le clavier
+    >
+      <View style={styles.innerContainer}>
+        <Text style={styles.title}>Ajouter un livre</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Titre"
+          value={bookData.titre}
+          onChangeText={(text) => setBookData({ ...bookData, titre: text })}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Domaine (ex: cybersécurité)"
+          value={bookData.domaine}
+          onChangeText={(text) => setBookData({ ...bookData, domaine: text })}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Sous-domaine (optionnel)"
+          value={bookData.sousDomaine}
+          onChangeText={(text) => setBookData({ ...bookData, sousDomaine: text })}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Description (optionnel)"
+          value={bookData.description}
+          onChangeText={(text) => setBookData({ ...bookData, description: text })}
+          multiline
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Particularité (ex: Interdiction de capture, optionnel)"
+          value={bookData.particularite}
+          onChangeText={(text) => setBookData({ ...bookData, particularite: text })}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Auteur"
+          value={bookData.auteur}
+          onChangeText={(text) => setBookData({ ...bookData, auteur: text })}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Niveau (ex: Débutant, Intermédiaire, Avancé)"
+          value={bookData.niveau}
+          onChangeText={(text) => setBookData({ ...bookData, niveau: text })}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Popularité initiale (optionnel)"
+          value={bookData.popularite?.toString() || ''}
+          onChangeText={(text) => setBookData({ ...bookData, popularite: text ? parseInt(text) || 0 : 0 })}
+          keyboardType="numeric"
+        />
+        <Button title="Choisir PDF" onPress={pickPdf} color={Colors.light.gold} />
+        <Text style={styles.fileText}>{pdfFile ? pdfFile.name : 'Aucun PDF sélectionné'}</Text>
+        <Button title="Choisir couverture" onPress={pickCover} color={Colors.light.gold} />
+        <Text style={styles.fileText}>{coverImage ? coverImage.name : 'Aucune image sélectionnée'}</Text>
+        <Button title="Uploader" onPress={handleUpload} color={Colors.light.gold} />
+      </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  scrollContainer: {
     flex: 1,
-    padding: 20,
     backgroundColor: '#fff',
+  },
+  contentContainer: {
+    flexGrow: 1, // Permet au contenu de s'étendre pour être défilant
+  },
+  innerContainer: {
+    padding: 20,
   },
   title: {
     fontSize: 24,
