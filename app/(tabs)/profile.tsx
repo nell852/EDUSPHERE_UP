@@ -12,6 +12,7 @@ import {
   Alert,
   ActivityIndicator,
   ScrollView,
+  Linking,
 } from "react-native"
 import {
   Camera,
@@ -34,6 +35,9 @@ import AddSkillModal from "../../components/AddSkillModal"
 import { router } from "expo-router"
 import * as Print from "expo-print"
 import * as Sharing from "expo-sharing"
+import AddProjectModal from "../../components/AddProjectModal"
+import AddLanguageModal from "../../components/AddLanguageModal"
+import AddHobbyModal from "../../components/AddHobbyModal"
 
 const Colors = {
   primary: "#007AFF",
@@ -73,6 +77,9 @@ interface Project {
   lastUpdated: string
   status: string
   visibility: string
+  outils_utilises?: string
+  interface_principale?: string
+  code_source?: string
 }
 
 interface Colleague {
@@ -80,16 +87,6 @@ interface Colleague {
   name: string
   photo?: string
   commonClubs: number
-}
-
-interface Conversation {
-  id: string
-  name: string
-  lastMessage: string
-  lastMessageTime: string
-  isClub: boolean
-  photo?: string
-  unread: boolean
 }
 
 export default function ProfileScreen() {
@@ -111,13 +108,22 @@ export default function ProfileScreen() {
   const [programmingLanguages, setProgrammingLanguages] = useState<string[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [colleagues, setColleagues] = useState<Colleague[]>([])
-  const [conversations, setConversations] = useState<Conversation[]>([])
   const [loadingData, setLoadingData] = useState(false)
 
   const [showEditModal, setShowEditModal] = useState(false)
   const [showSkillModal, setShowSkillModal] = useState(false)
   const [skills, setSkills] = useState<any[]>([])
   const [achievements, setAchievements] = useState<any[]>([])
+
+  const [showProjectModal, setShowProjectModal] = useState(false)
+  const [showLanguageModal, setShowLanguageModal] = useState(false)
+  const [showHobbyModal, setShowHobbyModal] = useState(false)
+  const [editingProject, setEditingProject] = useState<any>(null)
+  const [editingSkill, setEditingSkill] = useState<any>(null)
+  const [editingLanguage, setEditingLanguage] = useState<any>(null)
+  const [editingHobby, setEditingHobby] = useState<any>(null)
+  const [spokenLanguages, setSpokenLanguages] = useState<any[]>([])
+  const [hobbies, setHobbies] = useState<any[]>([])
 
   useEffect(() => {
     loadProfile()
@@ -126,8 +132,16 @@ export default function ProfileScreen() {
   useEffect(() => {
     if (profile?.id) {
       loadUserData()
-      const cleanup = setupRealtimeSubscriptions()
-      return cleanup
+
+      // Délai pour éviter les souscriptions multiples rapides
+      const timer = setTimeout(() => {
+        const cleanup = setupRealtimeSubscriptions()
+        return cleanup
+      }, 1000)
+
+      return () => {
+        clearTimeout(timer)
+      }
     }
   }, [profile?.id])
 
@@ -138,13 +152,14 @@ export default function ProfileScreen() {
       // S'assurer que le profil existe
       const userProfile = await userService.ensureProfileExists()
       setProfile({
-        ...userProfile,
+        id: userProfile.id,
         nom: userProfile.nom ?? "",
         prenom: userProfile.prenom ?? "",
         matricule: userProfile.matricule ?? "",
-        date_de_naissance: userProfile.date_de_naissance ?? "",
-        sexe: userProfile.sexe ?? "",
-        photo_profil_url: userProfile.photo_profil_url ?? "",
+        email: userProfile.email ?? "",
+        date_de_naissance: userProfile.date_de_naissance ?? undefined,
+        sexe: userProfile.sexe ?? undefined,
+        photo_profil_url: userProfile.photo_profil_url ?? undefined,
       })
 
       // Remplir les champs d'édition
@@ -188,9 +203,8 @@ export default function ProfileScreen() {
         setProgrammingLanguages([])
       }
 
-      // 2. Charger les projets depuis la table projets - VERSION CORRIGÉE
+      // 2. Charger les projets depuis la table projets - VERSION ROBUSTE
       try {
-        // D'abord charger les projets de l'utilisateur
         const { data: userProjects, error: userProjectsError } = await supabase
           .from("projets")
           .select("*")
@@ -201,11 +215,9 @@ export default function ProfileScreen() {
           console.error("Erreur projets:", userProjectsError)
           setProjects([])
         } else {
-          // Ensuite charger le nombre de collaborateurs pour chaque projet
           const formattedProjects: Project[] = []
 
           for (const project of userProjects || []) {
-            // Compter les collaborateurs pour ce projet spécifique
             const { count: collaboratorsCount } = await supabase
               .from("projet_collaborateurs")
               .select("*", { count: "exact", head: true })
@@ -218,8 +230,12 @@ export default function ProfileScreen() {
               languages: project.langages_utilises || [],
               collaborators: collaboratorsCount || 0,
               lastUpdated: formatTimeAgo(project.updated_at),
-              status: project.statut,
-              visibility: project.visibilite,
+              status: project.statut || "en_cours",
+              visibility: project.visibilite || "prive",
+              // Ajouter les nouveaux champs avec des valeurs par défaut
+              outils_utilises: project.outils_utilises || "",
+              interface_principale: project.interface_principale || "",
+              code_source: project.code_source || "",
             })
           }
 
@@ -253,38 +269,108 @@ export default function ProfileScreen() {
         setSkills([])
       }
 
-      // 4. Charger les réalisations/badges (remplace chat)
+      // 4. Charger les langues parlées
       try {
-        const achievementsData = [
-          {
-            id: 1,
-            name: "Premier projet",
-            description: "Créé votre premier projet",
-            earned: projects.length > 0,
-            icon: "🎯",
-          },
-          {
-            id: 2,
-            name: "Polyglotte",
-            description: "Maîtrise 3+ langages",
-            earned: programmingLanguages.length >= 3,
-            icon: "🌟",
-          },
-          {
-            id: 3,
-            name: "Collaborateur",
-            description: "Travaillé avec d'autres",
-            earned: colleagues.length > 0,
-            icon: "🤝",
-          },
-          { id: 4, name: "Expert", description: "5+ compétences ajoutées", earned: skills.length >= 5, icon: "🏆" },
-        ]
-        setAchievements(achievementsData)
+        const { data: languagesData, error: languagesError } = await supabase
+          .from("langues_parlees")
+          .select("*")
+          .eq("utilisateur_id", userId)
+          .order("created_at", { ascending: false })
+
+        if (!languagesError) {
+          setSpokenLanguages(languagesData || [])
+        }
       } catch (error) {
-        console.error("Erreur achievements:", error)
+        console.error("Erreur lors du chargement des langues:", error)
+        setSpokenLanguages([])
       }
 
-      // 3. Charger les collègues depuis les clubs - VERSION CORRIGÉE
+      // 5. Charger les loisirs
+      try {
+        const { data: hobbiesData, error: hobbiesError } = await supabase
+          .from("loisirs")
+          .select("*")
+          .eq("utilisateur_id", userId)
+          .order("created_at", { ascending: false })
+
+        if (!hobbiesError) {
+          setHobbies(hobbiesData || [])
+        }
+      } catch (error) {
+        console.error("Erreur lors du chargement des loisirs:", error)
+        setHobbies([])
+      }
+
+      // 6. Charger les réalisations/badges
+      const achievementsData = [
+        {
+          id: 1,
+          name: "Premier pas",
+          description: "Profil complété",
+          earned: !!(profile?.nom && profile?.prenom && profile?.email),
+          icon: "👤",
+          progress: profile?.nom && profile?.prenom && profile?.email ? 100 : 0,
+        },
+        {
+          id: 2,
+          name: "Développeur",
+          description: "Premier langage ajouté",
+          earned: programmingLanguages.length > 0,
+          icon: "💻",
+          progress: Math.min((programmingLanguages.length / 1) * 100, 100),
+        },
+        {
+          id: 3,
+          name: "Polyglotte Tech",
+          description: "Maîtrise 3+ langages",
+          earned: programmingLanguages.length >= 3,
+          icon: "🌟",
+          progress: Math.min((programmingLanguages.length / 3) * 100, 100),
+        },
+        {
+          id: 4,
+          name: "Chef de projet",
+          description: "Premier projet créé",
+          earned: projects.length > 0,
+          icon: "🚀",
+          progress: Math.min((projects.length / 1) * 100, 100),
+        },
+        {
+          id: 5,
+          name: "Collaborateur",
+          description: "Travaillé avec d'autres",
+          earned: colleagues.length > 0,
+          icon: "🤝",
+          progress: Math.min((colleagues.length / 1) * 100, 100),
+        },
+        {
+          id: 6,
+          name: "Expert",
+          description: "5+ compétences ajoutées",
+          earned: skills.length >= 5,
+          icon: "🏆",
+          progress: Math.min((skills.length / 5) * 100, 100),
+        },
+        {
+          id: 7,
+          name: "Polyglotte",
+          description: "Parle 2+ langues",
+          earned: spokenLanguages.length >= 2,
+          icon: "🌍",
+          progress: Math.min((spokenLanguages.length / 2) * 100, 100),
+        },
+        {
+          id: 8,
+          name: "Équilibré",
+          description: "3+ loisirs ajoutés",
+          earned: hobbies.length >= 3,
+          icon: "⚖️",
+          progress: Math.min((hobbies.length / 3) * 100, 100),
+        },
+      ]
+      setAchievements(achievementsData)
+
+      // 7. Charger les collègues depuis les clubs
       try {
         const { data: userClubs, error: userClubsError } = await supabase
           .from("club_membres")
@@ -345,52 +431,6 @@ export default function ProfileScreen() {
         console.error("Erreur lors du chargement des collègues:", error)
         setColleagues([])
       }
-
-      // 4. Charger les conversations récentes - VERSION CORRIGÉE
-      try {
-        const { data: recentMessages, error: messagesError } = await supabase
-          .from("messages")
-          .select(`
-            *,
-            expediteur:utilisateurs!expediteur_id(nom, prenom, photo_profil_url),
-            destinataire:utilisateurs!destinataire_id(nom, prenom, photo_profil_url),
-            clubs(nom)
-          `)
-          .or(`expediteur_id.eq.${userId},destinataire_id.eq.${userId}`)
-          .order("created_at", { ascending: false })
-          .limit(20)
-
-        if (!messagesError && recentMessages) {
-          const conversationsMap = new Map<string, Conversation>()
-
-          recentMessages.forEach((message: any) => {
-            const isFromUser = message.expediteur_id === userId
-            const otherUser = isFromUser ? message.destinataire : message.expediteur
-            const key = message.club_id || otherUser?.id
-
-            if (key && !conversationsMap.has(key)) {
-              conversationsMap.set(key, {
-                id: key,
-                name: message.club_id
-                  ? message.clubs?.nom || "Club sans nom"
-                  : `${otherUser?.prenom || ""} ${otherUser?.nom || ""}`.trim() || "Utilisateur inconnu",
-                lastMessage: message.contenu || "",
-                lastMessageTime: formatTimeAgo(message.created_at),
-                isClub: !!message.club_id,
-                photo: message.club_id ? undefined : otherUser?.photo_profil_url,
-                unread: !message.read_at && !isFromUser,
-              })
-            }
-          })
-
-          setConversations(Array.from(conversationsMap.values()))
-        } else {
-          setConversations([])
-        }
-      } catch (error) {
-        console.error("Erreur lors du chargement des conversations:", error)
-        setConversations([])
-      }
     } catch (error) {
       console.error("Erreur lors du chargement des données:", error)
     } finally {
@@ -401,33 +441,26 @@ export default function ProfileScreen() {
   const setupRealtimeSubscriptions = () => {
     if (!profile?.id) return () => {}
 
-    // Écouter les changements sur les projets
+    // Créer un canal unique avec un nom spécifique
+    const channelName = `projects_changes_${profile.id}_${Date.now()}`
+
     const projectsSubscription = supabase
-      .channel("projects_changes")
+      .channel(channelName)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "projets", filter: `proprietaire_id=eq.${profile.id}` },
-        () => {
+        (payload) => {
+          console.log("🔄 Changement détecté dans les projets:", payload)
           loadUserData()
         },
       )
-      .subscribe()
-
-    // Écouter les nouveaux messages
-    const messagesSubscription = supabase
-      .channel("messages_changes")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages", filter: `destinataire_id=eq.${profile.id}` },
-        () => {
-          loadUserData()
-        },
-      )
-      .subscribe()
+      .subscribe((status) => {
+        console.log("📡 Statut de souscription:", status)
+      })
 
     return () => {
-      projectsSubscription.unsubscribe()
-      messagesSubscription.unsubscribe()
+      console.log("🧹 Nettoyage de la souscription")
+      supabase.removeChannel(projectsSubscription)
     }
   }
 
@@ -459,9 +492,10 @@ export default function ProfileScreen() {
         nom: updatedProfile.nom ?? "",
         prenom: updatedProfile.prenom ?? "",
         matricule: updatedProfile.matricule ?? "",
-        date_de_naissance: updatedProfile.date_de_naissance ?? "",
-        sexe: updatedProfile.sexe ?? "",
-        photo_profil_url: updatedProfile.photo_profil_url ?? "",
+        email: updatedProfile.email ?? "",
+        date_de_naissance: updatedProfile.date_de_naissance ?? undefined,
+        sexe: updatedProfile.sexe ?? undefined,
+        photo_profil_url: updatedProfile.photo_profil_url ?? undefined,
       })
       setEditing(false)
       Alert.alert("Succès", "Profil mis à jour avec succès !")
@@ -511,7 +545,6 @@ export default function ProfileScreen() {
             throw error
           }
 
-          // Mettre à jour l'état local
           setProgrammingLanguages([...programmingLanguages, language.trim()])
           Alert.alert("Succès", "Langage ajouté avec succès !")
         } catch (error) {
@@ -541,31 +574,13 @@ export default function ProfileScreen() {
   }
 
   const addProject = () => {
-    Alert.prompt("Nouveau projet", "Nom du projet", async (projectName) => {
-      if (projectName && projectName.trim()) {
-        try {
-          const { data, error } = await supabase
-            .from("projets")
-            .insert({
-              proprietaire_id: profile?.id,
-              nom: projectName.trim(),
-              description: "",
-              langages_utilises: [],
-              statut: "en_cours",
-              visibilite: "prive",
-            })
-            .select()
+    setEditingProject(null)
+    setShowProjectModal(true)
+  }
 
-          if (error) throw error
-
-          loadUserData()
-          Alert.alert("Succès", "Projet créé avec succès !")
-        } catch (error) {
-          console.error("Erreur lors de la création du projet:", error)
-          Alert.alert("Erreur", "Impossible de créer le projet")
-        }
-      }
-    })
+  const editProject = (project: any) => {
+    setEditingProject(project)
+    setShowProjectModal(true)
   }
 
   const deleteProject = async (projectId: string) => {
@@ -595,68 +610,258 @@ export default function ProfileScreen() {
     ])
   }
 
+  const editSkill = (skill: any) => {
+    setEditingSkill(skill)
+    setShowSkillModal(true)
+  }
+
+  const deleteSkill = async (skillId: string) => {
+    Alert.alert("Supprimer la compétence", "Êtes-vous sûr de vouloir supprimer cette compétence ?", [
+      { text: "Annuler", style: "cancel" },
+      {
+        text: "Supprimer",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            const { error } = await supabase
+              .from("competences")
+              .delete()
+              .eq("id", skillId)
+              .eq("utilisateur_id", profile?.id)
+
+            if (error) throw error
+
+            setSkills(skills.filter((s) => s.id !== skillId))
+            Alert.alert("Succès", "Compétence supprimée avec succès !")
+          } catch (error) {
+            console.error("Erreur lors de la suppression:", error)
+            Alert.alert("Erreur", "Impossible de supprimer la compétence")
+          }
+        },
+      },
+    ])
+  }
+
+  const addSpokenLanguage = () => {
+    setEditingLanguage(null)
+    setShowLanguageModal(true)
+  }
+
+  const editSpokenLanguage = (language: any) => {
+    setEditingLanguage(language)
+    setShowLanguageModal(true)
+  }
+
+  const deleteSpokenLanguage = async (languageId: string) => {
+    Alert.alert("Supprimer la langue", "Êtes-vous sûr de vouloir supprimer cette langue ?", [
+      { text: "Annuler", style: "cancel" },
+      {
+        text: "Supprimer",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            const { error } = await supabase
+              .from("langues_parlees")
+              .delete()
+              .eq("id", languageId)
+              .eq("utilisateur_id", profile?.id)
+
+            if (error) throw error
+
+            setSpokenLanguages(spokenLanguages.filter((l) => l.id !== languageId))
+            Alert.alert("Succès", "Langue supprimée avec succès !")
+          } catch (error) {
+            console.error("Erreur lors de la suppression:", error)
+            Alert.alert("Erreur", "Impossible de supprimer la langue")
+          }
+        },
+      },
+    ])
+  }
+
+  const addHobby = () => {
+    setEditingHobby(null)
+    setShowHobbyModal(true)
+  }
+
+  const editHobby = (hobby: any) => {
+    setEditingHobby(hobby)
+    setShowHobbyModal(true)
+  }
+
+  const deleteHobby = async (hobbyId: string) => {
+    Alert.alert("Supprimer le loisir", "Êtes-vous sûr de vouloir supprimer ce loisir ?", [
+      { text: "Annuler", style: "cancel" },
+      {
+        text: "Supprimer",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            const { error } = await supabase
+              .from("loisirs")
+              .delete()
+              .eq("id", hobbyId)
+              .eq("utilisateur_id", profile?.id)
+
+            if (error) throw error
+
+            setHobbies(hobbies.filter((h) => h.id !== hobbyId))
+            Alert.alert("Succès", "Loisir supprimé avec succès !")
+          } catch (error) {
+            console.error("Erreur lors de la suppression:", error)
+            Alert.alert("Erreur", "Impossible de supprimer le loisir")
+          }
+        },
+      },
+    ])
+  }
+
   const generateCV = async () => {
     try {
       const cvHTML = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <title>CV - ${profile?.prenom} ${profile?.nom}</title>
-        <style>
-          body { font-family: Arial, sans-serif; margin: 40px; color: #333; }
-          .header { text-align: center; margin-bottom: 30px; }
-          .name { font-size: 28px; font-weight: bold; color: #007AFF; }
-          .contact { margin: 10px 0; }
-          .section { margin: 20px 0; }
-          .section-title { font-size: 18px; font-weight: bold; color: #007AFF; border-bottom: 2px solid #007AFF; padding-bottom: 5px; }
-          .skill-item, .project-item { margin: 10px 0; padding: 10px; background: #f9f9f9; border-radius: 5px; }
-          .skill-level { font-weight: bold; color: #FFD700; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <div class="name">${profile?.prenom} ${profile?.nom}</div>
-          <div class="contact">${profile?.email}</div>
-          <div class="contact">Matricule: ${profile?.matricule}</div>
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>CV - ${profile?.prenom} ${profile?.nom}</title>
+      <style>
+        body { font-family: Arial, sans-serif; margin: 40px; color: #333; line-height: 1.6; }
+        .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #007AFF; padding-bottom: 20px; }
+        .name { font-size: 28px; font-weight: bold; color: #007AFF; margin-bottom: 10px; }
+        .contact { margin: 5px 0; color: #666; }
+        .section { margin: 25px 0; }
+        .section-title { font-size: 20px; font-weight: bold; color: #007AFF; border-bottom: 1px solid #007AFF; padding-bottom: 5px; margin-bottom: 15px; }
+        .item { margin: 15px 0; padding: 15px; background: #f9f9f9; border-radius: 8px; border-left: 4px solid #007AFF; }
+        .item-title { font-weight: bold; color: #333; font-size: 16px; }
+        .item-level { display: inline-block; background: #007AFF; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px; margin-left: 10px; }
+        .item-description { margin-top: 8px; color: #666; }
+        .languages-grid, .hobbies-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+        .project-languages { margin-top: 8px; }
+        .project-language { display: inline-block; background: #FFD700; color: #333; padding: 2px 6px; border-radius: 4px; font-size: 11px; margin-right: 5px; }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <div class="name">${profile?.prenom} ${profile?.nom}</div>
+        <div class="contact">📧 ${profile?.email}</div>
+        <div class="contact">🆔 Matricule: ${profile?.matricule}</div>
+        ${profile?.date_de_naissance ? `<div class="contact">📅 ${new Date(profile.date_de_naissance).toLocaleDateString("fr-FR")}</div>` : ""}
+      </div>
+      
+      ${
+        skills.length > 0
+          ? `
+      <div class="section">
+        <div class="section-title">🎯 Compétences Professionnelles</div>
+        ${skills
+          .map(
+            (skill) => `
+          <div class="item">
+            <div class="item-title">${skill.nom}<span class="item-level">${skill.niveau}</span></div>
+            ${skill.description ? `<div class="item-description">${skill.description}</div>` : ""}
+            ${skill.experience ? `<div class="item-description"><strong>Expérience:</strong> ${skill.experience}</div>` : ""}
+            ${skill.certifications ? `<div class="item-description"><strong>Certifications:</strong> ${skill.certifications}</div>` : ""}
+          </div>
+        `,
+          )
+          .join("")}
+      </div>
+      `
+          : ""
+      }
+      
+      ${
+        programmingLanguages.length > 0
+          ? `
+      <div class="section">
+        <div class="section-title">💻 Langages de Programmation</div>
+        <div class="item">
+          <div class="item-description">${programmingLanguages.join(", ")}</div>
         </div>
-        
-        <div class="section">
-          <div class="section-title">Compétences Professionnelles</div>
-          ${skills
+      </div>
+      `
+          : ""
+      }
+      
+      ${
+        spokenLanguages.length > 0
+          ? `
+      <div class="section">
+        <div class="section-title">🌍 Langues Parlées</div>
+        <div class="languages-grid">
+          ${spokenLanguages
             .map(
-              (skill) => `
-            <div class="skill-item">
-              <strong>${skill.nom}</strong> - <span class="skill-level">${skill.niveau}</span>
-              ${skill.description ? `<p>${skill.description}</p>` : ""}
+              (lang) => `
+            <div class="item">
+              <div class="item-title">${lang.langue}<span class="item-level">${lang.niveau}</span></div>
+              ${lang.certification ? `<div class="item-description"><strong>Certification:</strong> ${lang.certification}</div>` : ""}
             </div>
           `,
             )
             .join("")}
         </div>
-        
-        <div class="section">
-          <div class="section-title">Langages de Programmation</div>
-          <p>${programmingLanguages.join(", ")}</p>
-        </div>
-        
-        <div class="section">
-          <div class="section-title">Projets</div>
-          ${projects
+      </div>
+      `
+          : ""
+      }
+      
+      ${
+        projects.length > 0
+          ? `
+      <div class="section">
+        <div class="section-title">🚀 Projets</div>
+        ${projects
+          .map(
+            (project) => `
+          <div class="item">
+            <div class="item-title">${project.name}</div>
+            <div class="item-description">${project.description}</div>
+            ${
+              project.languages.length > 0
+                ? `
+              <div class="project-languages">
+                ${project.languages.map((lang) => `<span class="project-language">${lang}</span>`).join("")}
+              </div>
+            `
+                : ""
+            }
+          </div>
+        `,
+          )
+          .join("")}
+      </div>
+      `
+          : ""
+      }
+      
+      ${
+        hobbies.length > 0
+          ? `
+      <div class="section">
+        <div class="section-title">🎨 Loisirs & Centres d'intérêt</div>
+        <div class="hobbies-grid">
+          ${hobbies
             .map(
-              (project) => `
-            <div class="project-item">
-              <strong>${project.name}</strong>
-              <p>${project.description}</p>
-              <p><em>Langages: ${project.languages.join(", ")}</em></p>
+              (hobby) => `
+            <div class="item">
+              <div class="item-title">${hobby.nom}${hobby.niveau ? `<span class="item-level">${hobby.niveau}</span>` : ""}</div>
+              ${hobby.description ? `<div class="item-description">${hobby.description}</div>` : ""}
             </div>
           `,
             )
             .join("")}
         </div>
-      </body>
-      </html>
-    `
+      </div>
+      `
+          : ""
+      }
+      
+      <div style="margin-top: 40px; text-align: center; color: #666; font-size: 12px;">
+        CV généré le ${new Date().toLocaleDateString("fr-FR")} à ${new Date().toLocaleTimeString("fr-FR")}
+      </div>
+    </body>
+    </html>
+  `
 
       const { uri } = await Print.printToFileAsync({ html: cvHTML })
       await Sharing.shareAsync(uri)
@@ -668,17 +873,79 @@ export default function ProfileScreen() {
 
   const openCodeEditor = () => {
     Alert.alert("Environnement de développement", "Choisissez votre environnement :", [
-      { text: "JavaScript", onPress: () => openEditor("javascript") },
-      { text: "Python", onPress: () => openEditor("python") },
-      { text: "HTML/CSS", onPress: () => openEditor("html") },
+      { text: "VS Code Web", onPress: () => openWebEditor("vscode") },
+      { text: "CodePen", onPress: () => openWebEditor("codepen") },
+      { text: "JSFiddle", onPress: () => openWebEditor("jsfiddle") },
+      { text: "Repl.it", onPress: () => openWebEditor("replit") },
+      { text: "GitHub Codespaces", onPress: () => openWebEditor("codespaces") },
+      { text: "StackBlitz", onPress: () => openWebEditor("stackblitz") },
       { text: "Annuler", style: "cancel" },
     ])
   }
 
-  const openEditor = (language: string) => {
-    // Ici vous pourriez ouvrir un éditeur de code intégré
-    Alert.alert("Éditeur", `Ouverture de l'éditeur ${language}...`)
+  const openWebEditor = async (editor: string) => {
+    const urls = {
+      vscode: "https://vscode.dev",
+      codepen: "https://codepen.io/pen/",
+      jsfiddle: "https://jsfiddle.net",
+      replit: "https://replit.com",
+      codespaces: "https://github.com/codespaces",
+      stackblitz: "https://stackblitz.com",
+    }
+
+    const url = urls[editor as keyof typeof urls]
+
+    try {
+      console.log(`🚀 Ouverture de ${editor}: ${url}`)
+
+      // Vérifier si l'URL peut être ouverte
+      const supported = await Linking.canOpenURL(url)
+
+      if (supported) {
+        await Linking.openURL(url)
+        console.log(`✅ ${editor} ouvert avec succès`)
+      } else {
+        console.warn(`⚠️ Impossible d'ouvrir ${url}`)
+        Alert.alert(
+          "Erreur",
+          `Impossible d'ouvrir ${editor}. Veuillez vérifier que vous avez un navigateur installé.`,
+          [
+            {
+              text: "Copier l'URL",
+              onPress: () => {
+                // Dans une vraie app, vous pourriez utiliser Clipboard.setString(url)
+                Alert.alert("URL copiée", `URL: ${url}`)
+              },
+            },
+            { text: "OK" },
+          ],
+        )
+      }
+    } catch (error) {
+      console.error(`❌ Erreur lors de l'ouverture de ${editor}:`, error)
+      Alert.alert(
+        "Erreur",
+        `Impossible d'ouvrir ${editor}.\n\nURL: ${url}\n\nVous pouvez copier cette URL et l'ouvrir manuellement dans votre navigateur.`,
+        [
+          {
+            text: "Copier l'URL",
+            onPress: () => {
+              Alert.alert("URL", url)
+            },
+          },
+          { text: "OK" },
+        ],
+      )
+    }
   }
+
+  useEffect(() => {
+    return () => {
+      // Nettoyage global au démontage du composant
+      console.log("🧹 Nettoyage global des souscriptions")
+      supabase.removeAllChannels()
+    }
+  }, [])
 
   if (loading) {
     return (
@@ -863,6 +1130,7 @@ export default function ProfileScreen() {
                   <TouchableOpacity
                     key={project.id}
                     style={styles.projectCard}
+                    onPress={() => editProject(project)}
                     onLongPress={() => deleteProject(project.id)}
                   >
                     <View style={styles.projectHeader}>
@@ -919,7 +1187,12 @@ export default function ProfileScreen() {
 
               {skills.length > 0 ? (
                 skills.map((skill) => (
-                  <View key={skill.id} style={styles.skillCard}>
+                  <TouchableOpacity
+                    key={skill.id}
+                    style={styles.skillCard}
+                    onPress={() => editSkill(skill)}
+                    onLongPress={() => deleteSkill(skill.id)}
+                  >
                     <View style={styles.skillHeader}>
                       <Text style={styles.skillName}>{skill.nom}</Text>
                       <View
@@ -945,10 +1218,104 @@ export default function ProfileScreen() {
                     {skill.certifications && (
                       <Text style={styles.skillCertifications}>Certifications: {skill.certifications}</Text>
                     )}
-                  </View>
+                  </TouchableOpacity>
                 ))
               ) : (
                 <Text style={styles.emptyText}>Aucune compétence ajoutée</Text>
+              )}
+            </View>
+
+            {/* Langues parlées */}
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Langues parlées ({spokenLanguages.length})</Text>
+                <TouchableOpacity style={styles.addButton} onPress={addSpokenLanguage}>
+                  <Text style={styles.addButtonText}>Ajouter</Text>
+                </TouchableOpacity>
+              </View>
+
+              {spokenLanguages.length > 0 ? (
+                spokenLanguages.map((language) => (
+                  <TouchableOpacity
+                    key={language.id}
+                    style={styles.skillCard}
+                    onPress={() => editSpokenLanguage(language)}
+                    onLongPress={() => deleteSpokenLanguage(language.id)}
+                  >
+                    <View style={styles.skillHeader}>
+                      <Text style={styles.skillName}>{language.langue}</Text>
+                      <View
+                        style={[
+                          styles.skillLevel,
+                          {
+                            backgroundColor:
+                              language.niveau === "natif"
+                                ? "#4CAF50"
+                                : language.niveau === "avance"
+                                  ? "#FF9500"
+                                  : language.niveau === "intermediaire"
+                                    ? "#007AFF"
+                                    : "#8E8E93",
+                          },
+                        ]}
+                      >
+                        <Text style={styles.skillLevelText}>{language.niveau}</Text>
+                      </View>
+                    </View>
+                    {language.certification && (
+                      <Text style={styles.skillCertifications}>Certification: {language.certification}</Text>
+                    )}
+                  </TouchableOpacity>
+                ))
+              ) : (
+                <Text style={styles.emptyText}>Aucune langue ajoutée</Text>
+              )}
+            </View>
+
+            {/* Loisirs */}
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Loisirs & Centres d'intérêt ({hobbies.length})</Text>
+                <TouchableOpacity style={styles.addButton} onPress={addHobby}>
+                  <Text style={styles.addButtonText}>Ajouter</Text>
+                </TouchableOpacity>
+              </View>
+
+              {hobbies.length > 0 ? (
+                hobbies.map((hobby) => (
+                  <TouchableOpacity
+                    key={hobby.id}
+                    style={styles.skillCard}
+                    onPress={() => editHobby(hobby)}
+                    onLongPress={() => deleteHobby(hobby.id)}
+                  >
+                    <View style={styles.skillHeader}>
+                      <Text style={styles.skillName}>{hobby.nom}</Text>
+                      {hobby.niveau && (
+                        <View
+                          style={[
+                            styles.skillLevel,
+                            {
+                              backgroundColor:
+                                hobby.niveau === "expert"
+                                  ? "#4CAF50"
+                                  : hobby.niveau === "avance"
+                                    ? "#FF9500"
+                                    : hobby.niveau === "intermediaire"
+                                      ? "#007AFF"
+                                      : "#8E8E93",
+                            },
+                          ]}
+                        >
+                          <Text style={styles.skillLevelText}>{hobby.niveau}</Text>
+                        </View>
+                      )}
+                    </View>
+                    {hobby.description && <Text style={styles.skillDescription}>{hobby.description}</Text>}
+                  </TouchableOpacity>
+                ))
+              ) : (
+                <Text style={styles.emptyText}>Aucun loisir ajouté</Text>
               )}
             </View>
 
@@ -973,7 +1340,7 @@ export default function ProfileScreen() {
                 </View>
                 <View style={styles.toolInfo}>
                   <Text style={styles.toolName}>Environnements de développement</Text>
-                  <Text style={styles.toolDescription}>Accéder aux environnements de codage spécialisés</Text>
+                  <Text style={styles.toolDescription}>Accéder aux environnements de codage en ligne</Text>
                 </View>
                 <ChevronRight size={16} color={Colors.darkGray} />
               </TouchableOpacity>
@@ -1031,6 +1398,12 @@ export default function ProfileScreen() {
                       {achievement.name}
                     </Text>
                     <Text style={styles.achievementDescription}>{achievement.description}</Text>
+                    <View style={styles.progressContainer}>
+                      <View style={styles.progressBar}>
+                        <View style={[styles.progressFill, { width: `${achievement.progress}%` }]} />
+                      </View>
+                      <Text style={styles.progressText}>{Math.round(achievement.progress)}%</Text>
+                    </View>
                   </View>
                   {achievement.earned && (
                     <View style={styles.achievementBadge}>
@@ -1056,11 +1429,54 @@ export default function ProfileScreen() {
 
       <AddSkillModal
         visible={showSkillModal}
-        onClose={() => setShowSkillModal(false)}
+        onClose={() => {
+          setShowSkillModal(false)
+          setEditingSkill(null)
+        }}
         userId={profile?.id || ""}
         onSkillAdded={() => {
           loadUserData()
         }}
+        skill={editingSkill}
+      />
+
+      <AddProjectModal
+        visible={showProjectModal}
+        onClose={() => {
+          setShowProjectModal(false)
+          setEditingProject(null)
+        }}
+        userId={profile?.id || ""}
+        onProjectAdded={() => {
+          loadUserData()
+        }}
+        project={editingProject}
+      />
+
+      <AddLanguageModal
+        visible={showLanguageModal}
+        onClose={() => {
+          setShowLanguageModal(false)
+          setEditingLanguage(null)
+        }}
+        userId={profile?.id || ""}
+        onLanguageAdded={() => {
+          loadUserData()
+        }}
+        language={editingLanguage}
+      />
+
+      <AddHobbyModal
+        visible={showHobbyModal}
+        onClose={() => {
+          setShowHobbyModal(false)
+          setEditingHobby(null)
+        }}
+        userId={profile?.id || ""}
+        onHobbyAdded={() => {
+          loadUserData()
+        }}
+        hobby={editingHobby}
       />
     </SafeAreaView>
   )
@@ -1439,67 +1855,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.textLight,
   },
-  conversationCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.white,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 8,
-    shadowColor: Colors.textDark,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  conversationPhoto: {
-    position: "relative",
-    marginRight: 12,
-  },
-  conversationImage: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-  },
-  conversationPlaceholder: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.lightGray,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  unreadDot: {
-    position: "absolute",
-    top: -2,
-    right: -2,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: Colors.danger,
-    borderWidth: 2,
-    borderColor: Colors.white,
-  },
-  conversationInfo: {
-    flex: 1,
-  },
-  conversationName: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: Colors.textDark,
-    marginBottom: 2,
-  },
-  conversationLastMessage: {
-    fontSize: 14,
-    color: Colors.textLight,
-  },
-  conversationTime: {
-    alignItems: "flex-end",
-  },
-  conversationTimeText: {
-    fontSize: 12,
-    color: Colors.textLight,
-  },
   emptyState: {
     flex: 1,
     alignItems: "center",
@@ -1618,5 +1973,27 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.white,
     fontWeight: "bold",
+  },
+  progressContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 8,
+  },
+  progressBar: {
+    flex: 1,
+    height: 6,
+    backgroundColor: Colors.lightGray,
+    borderRadius: 3,
+    marginRight: 8,
+  },
+  progressFill: {
+    height: "100%",
+    backgroundColor: Colors.success,
+    borderRadius: 3,
+  },
+  progressText: {
+    fontSize: 12,
+    color: Colors.textLight,
+    minWidth: 35,
   },
 })

@@ -1,26 +1,7 @@
 "use client"
-
-import { useState, useEffect } from "react"
-import {
-  StyleSheet,
-  View,
-  Text,
-  TouchableOpacity,
-  SafeAreaView,
-  Alert,
-  Switch,
-} from "react-native"
-import {
-  ArrowLeft,
-  Globe,
-  Moon,
-  Sun,
-  LogOut,
-  User,
-  Lock,
-  Bell,
-  Shield,
-} from "lucide-react-native"
+import { useState } from "react"
+import { StyleSheet, View, Text, TouchableOpacity, SafeAreaView, Alert, Switch } from "react-native"
+import { ArrowLeft, Globe, Moon, Sun, LogOut, User, Lock, Bell, Shield } from "lucide-react-native"
 import { supabase } from "../lib/supabase"
 import { router } from "expo-router"
 
@@ -42,8 +23,8 @@ const Colors = {
 }
 
 export default function SettingsScreen() {
-  const [darkMode, setDarkMode] = useState(false)
   const [language, setLanguage] = useState("Français")
+  const [darkMode, setDarkMode] = useState(false)
   const [notifications, setNotifications] = useState(true)
 
   const languages = ["Français", "English", "Español", "العربية"]
@@ -57,7 +38,7 @@ export default function SettingsScreen() {
         onPress: async () => {
           try {
             await supabase.auth.signOut()
-            router.replace("/login")
+            router.replace("/auth/login")
           } catch (error) {
             console.error("Erreur lors de la déconnexion:", error)
             Alert.alert("Erreur", "Impossible de se déconnecter")
@@ -73,8 +54,11 @@ export default function SettingsScreen() {
       "",
       languages.map((lang) => ({
         text: lang,
-        onPress: () => setLanguage(lang),
-      }))
+        onPress: () => {
+          setLanguage(lang)
+          Alert.alert("Langue changée", `Langue définie sur ${lang}`)
+        },
+      })),
     )
   }
 
@@ -98,18 +82,55 @@ export default function SettingsScreen() {
           Alert.alert("Erreur", "Le mot de passe doit contenir au moins 6 caractères")
         }
       },
-      "secure-text"
+      "secure-text",
     )
   }
 
+  const openEditProfile = () => {
+    router.back()
+    Alert.alert("Info", "Retour au profil pour éditer")
+  }
+
+  const openPrivacySettings = () => {
+    Alert.alert("Paramètres de confidentialité", "Choisissez vos préférences de confidentialité :", [
+      {
+        text: "Profil public",
+        onPress: () => Alert.alert("Succès", "Profil défini comme public"),
+      },
+      {
+        text: "Profil privé",
+        onPress: () => Alert.alert("Succès", "Profil défini comme privé"),
+      },
+      {
+        text: "Visible aux collègues uniquement",
+        onPress: () => Alert.alert("Succès", "Profil visible aux collègues uniquement"),
+      },
+      { text: "Annuler", style: "cancel" },
+    ])
+  }
+
+  const currentColors = darkMode
+    ? {
+        ...Colors,
+        white: Colors.black,
+        black: Colors.white,
+        background: Colors.darkGray,
+        lightGray: Colors.gray,
+        textDark: Colors.white,
+        textLight: Colors.lightGray,
+      }
+    : Colors
+
   return (
-    <SafeAreaView style={[styles.container, darkMode && styles.darkContainer]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: currentColors.background }]}>
       {/* Header */}
-      <View style={[styles.header, darkMode && styles.darkHeader]}>
+      <View
+        style={[styles.header, { backgroundColor: currentColors.white, borderBottomColor: currentColors.lightGray }]}
+      >
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <ArrowLeft size={24} color={darkMode ? Colors.white : Colors.black} />
+          <ArrowLeft size={24} color={currentColors.textDark} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, darkMode && styles.darkText]}>Paramètres</Text>
+        <Text style={[styles.headerTitle, { color: currentColors.textDark }]}>Paramètres</Text>
         <View style={styles.placeholder} />
       </View>
 
@@ -117,43 +138,55 @@ export default function SettingsScreen() {
       <View style={styles.content}>
         {/* Account Section */}
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, darkMode && styles.darkText]}>Compte</Text>
-          
-          <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
+          <Text style={[styles.sectionTitle, { color: currentColors.textDark }]}>Compte</Text>
+
+          <TouchableOpacity
+            style={[styles.settingItem, { backgroundColor: currentColors.white }]}
+            onPress={openEditProfile}
+          >
             <User size={20} color={Colors.primary} />
-            <Text style={[styles.settingText, darkMode && styles.darkText]}>Modifier le profil</Text>
+            <Text style={[styles.settingText, { color: currentColors.textDark }]}>Modifier le profil</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={changePassword}>
+          <TouchableOpacity
+            style={[styles.settingItem, { backgroundColor: currentColors.white }]}
+            onPress={changePassword}
+          >
             <Lock size={20} color={Colors.primary} />
-            <Text style={[styles.settingText, darkMode && styles.darkText]}>Changer le mot de passe</Text>
+            <Text style={[styles.settingText, { color: currentColors.textDark }]}>Changer le mot de passe</Text>
           </TouchableOpacity>
         </View>
 
         {/* Preferences Section */}
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, darkMode && styles.darkText]}>Préférences</Text>
-          
-          <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]} onPress={selectLanguage}>
+          <Text style={[styles.sectionTitle, { color: currentColors.textDark }]}>Préférences</Text>
+
+          <TouchableOpacity
+            style={[styles.settingItem, { backgroundColor: currentColors.white }]}
+            onPress={selectLanguage}
+          >
             <Globe size={20} color={Colors.primary} />
-            <Text style={[styles.settingText, darkMode && styles.darkText]}>Langue</Text>
-            <Text style={[styles.settingValue, darkMode && styles.darkTextLight]}>{language}</Text>
+            <Text style={[styles.settingText, { color: currentColors.textDark }]}>Langue</Text>
+            <Text style={[styles.settingValue, { color: currentColors.textLight }]}>{language}</Text>
           </TouchableOpacity>
 
-          <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
+          <View style={[styles.settingItem, { backgroundColor: currentColors.white }]}>
             {darkMode ? <Moon size={20} color={Colors.primary} /> : <Sun size={20} color={Colors.primary} />}
-            <Text style={[styles.settingText, darkMode && styles.darkText]}>Mode sombre</Text>
+            <Text style={[styles.settingText, { color: currentColors.textDark }]}>Mode sombre</Text>
             <Switch
               value={darkMode}
-              onValueChange={setDarkMode}
+              onValueChange={(value) => {
+                setDarkMode(value)
+                Alert.alert("Mode sombre", value ? "Mode sombre activé" : "Mode clair activé")
+              }}
               trackColor={{ false: Colors.lightGray, true: Colors.primary }}
               thumbColor={Colors.white}
             />
           </View>
 
-          <View style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
+          <View style={[styles.settingItem, { backgroundColor: currentColors.white }]}>
             <Bell size={20} color={Colors.primary} />
-            <Text style={[styles.settingText, darkMode && styles.darkText]}>Notifications</Text>
+            <Text style={[styles.settingText, { color: currentColors.textDark }]}>Notifications</Text>
             <Switch
               value={notifications}
               onValueChange={setNotifications}
@@ -165,16 +198,22 @@ export default function SettingsScreen() {
 
         {/* Security Section */}
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, darkMode && styles.darkText]}>Sécurité</Text>
-          
-          <TouchableOpacity style={[styles.settingItem, darkMode && styles.darkSettingItem]}>
+          <Text style={[styles.sectionTitle, { color: currentColors.textDark }]}>Sécurité</Text>
+
+          <TouchableOpacity
+            style={[styles.settingItem, { backgroundColor: currentColors.white }]}
+            onPress={openPrivacySettings}
+          >
             <Shield size={20} color={Colors.primary} />
-            <Text style={[styles.settingText, darkMode && styles.darkText]}>Confidentialité</Text>
+            <Text style={[styles.settingText, { color: currentColors.textDark }]}>Confidentialité</Text>
           </TouchableOpacity>
         </View>
 
         {/* Logout */}
-        <TouchableOpacity style={[styles.logoutButton, darkMode && styles.darkLogoutButton]} onPress={signOut}>
+        <TouchableOpacity
+          style={[styles.logoutButton, { backgroundColor: currentColors.white, borderColor: Colors.danger }]}
+          onPress={signOut}
+        >
           <LogOut size={20} color={Colors.danger} />
           <Text style={styles.logoutText}>Se déconnecter</Text>
         </TouchableOpacity>
@@ -186,10 +225,6 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
-  },
-  darkContainer: {
-    backgroundColor: Colors.black,
   },
   header: {
     flexDirection: "row",
@@ -197,12 +232,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.lightGray,
-    backgroundColor: Colors.white,
-  },
-  darkHeader: {
-    backgroundColor: Colors.darkGray,
-    borderBottomColor: Colors.gray,
   },
   backButton: {
     padding: 8,
@@ -210,13 +239,6 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 18,
     fontWeight: "600",
-    color: Colors.black,
-  },
-  darkText: {
-    color: Colors.white,
-  },
-  darkTextLight: {
-    color: Colors.gray,
   },
   placeholder: {
     width: 40,
@@ -231,7 +253,6 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: "600",
-    color: Colors.textDark,
     marginBottom: 16,
     textTransform: "uppercase",
     letterSpacing: 0.5,
@@ -239,36 +260,25 @@ const styles = StyleSheet.create({
   settingItem: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Colors.white,
     padding: 16,
     borderRadius: 12,
     marginBottom: 8,
   },
-  darkSettingItem: {
-    backgroundColor: Colors.darkGray,
-  },
   settingText: {
     fontSize: 16,
-    color: Colors.textDark,
     marginLeft: 12,
     flex: 1,
   },
   settingValue: {
     fontSize: 14,
-    color: Colors.textLight,
   },
   logoutButton: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Colors.white,
     padding: 16,
     borderRadius: 12,
     marginTop: 16,
     borderWidth: 1,
-    borderColor: Colors.danger,
-  },
-  darkLogoutButton: {
-    backgroundColor: Colors.darkGray,
   },
   logoutText: {
     fontSize: 16,

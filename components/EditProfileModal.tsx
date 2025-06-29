@@ -35,51 +35,124 @@ export default function EditProfileModal({ visible, onClose, profile, onSave }: 
   const [saving, setSaving] = useState(false)
   const [matricule, setMatricule] = useState(profile?.matricule || "")
 
+  // Options standardisées pour le sexe
+  const sexeOptions = ["Masculin", "Féminin", "Autre"]
+
   const handleSave = async () => {
     try {
       setSaving(true)
+
+      // Validation des données
+      if (!nom.trim() || !prenom.trim()) {
+        Alert.alert("Erreur", "Le nom et le prénom sont requis")
+        return
+      }
+
+      // Validation de la date de naissance
+      if (dateNaissance && dateNaissance.trim()) {
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/
+        if (!dateRegex.test(dateNaissance.trim())) {
+          Alert.alert("Erreur", "Format de date invalide. Utilisez YYYY-MM-DD")
+          return
+        }
+
+        const date = new Date(dateNaissance.trim())
+        const today = new Date()
+        const minDate = new Date("1900-01-01")
+
+        if (date > today || date < minDate) {
+          Alert.alert("Erreur", "Date de naissance invalide")
+          return
+        }
+      }
+
+      // Validation du sexe
+      if (sexe && sexe.trim() && !sexeOptions.includes(sexe.trim())) {
+        Alert.alert("Erreur", "Veuillez sélectionner une option valide pour le sexe")
+        return
+      }
+
+      console.log("🔄 Mise à jour du profil avec les données:", {
+        nom: nom.trim(),
+        prenom: prenom.trim(),
+        matricule: matricule.trim(),
+        date_de_naissance: dateNaissance.trim() || null,
+        sexe: sexe.trim() || null,
+      })
+
       const updatedProfile = await userService.createOrUpdateProfile({
         nom: nom.trim(),
         prenom: prenom.trim(),
         matricule: matricule.trim(),
-        date_de_naissance: dateNaissance || undefined,
-        sexe: sexe || undefined,
+        date_de_naissance: dateNaissance.trim() || undefined,
+        sexe: sexe.trim() || undefined,
         photo_profil_url: profile?.photo_profil_url,
       })
 
       // Mettre à jour les champs supplémentaires directement dans la base de données
-      const { error: updateError } = await supabase
-        .from("utilisateurs")
-        .update({
-          telephone: telephone.trim() || null,
-          adresse: adresse.trim() || null,
-          bio: bio.trim() || null,
-        })
-        .eq("id", profile?.id)
+      try {
+        const { error: updateError } = await supabase
+          .from("utilisateurs")
+          .update({
+            telephone: telephone.trim() || null,
+            adresse: adresse.trim() || null,
+            bio: bio.trim() || null,
+          })
+          .eq("id", profile?.id)
 
-      if (updateError) {
-        console.warn("Impossible de mettre à jour les champs supplémentaires:", updateError)
+        if (updateError) {
+          console.warn("⚠️ Impossible de mettre à jour les champs supplémentaires:", updateError)
+        } else {
+          console.log("✅ Champs supplémentaires mis à jour")
+        }
+      } catch (error) {
+        console.warn("⚠️ Erreur lors de la mise à jour des champs supplémentaires:", error)
       }
 
       // Mettre à jour l'email séparément si nécessaire
       if (email.trim() !== profile?.email) {
-        const { error: emailError } = await supabase.auth.updateUser({
-          email: email.trim(),
-        })
-        if (emailError) {
-          console.warn("Impossible de mettre à jour l'email:", emailError)
+        try {
+          const { error: emailError } = await supabase.auth.updateUser({
+            email: email.trim(),
+          })
+          if (emailError) {
+            console.warn("⚠️ Impossible de mettre à jour l'email:", emailError)
+          } else {
+            console.log("✅ Email mis à jour")
+          }
+        } catch (error) {
+          console.warn("⚠️ Erreur lors de la mise à jour de l'email:", error)
         }
       }
 
       onSave(updatedProfile)
       onClose()
       Alert.alert("Succès", "Profil mis à jour avec succès !")
-    } catch (error) {
-      console.error("Erreur:", error)
-      Alert.alert("Erreur", "Impossible de sauvegarder le profil")
+    } catch (error: any) {
+      console.error("❌ Erreur lors de la sauvegarde:", error)
+
+      let errorMessage = "Impossible de sauvegarder le profil"
+
+      if (error.code === "23514") {
+        errorMessage = "Données invalides. Vérifiez le format de vos informations."
+      } else if (error.message) {
+        errorMessage = `Erreur: ${error.message}`
+      }
+
+      Alert.alert("Erreur", errorMessage)
     } finally {
       setSaving(false)
     }
+  }
+
+  const selectSexe = () => {
+    Alert.alert("Sélectionner le sexe", "", [
+      ...sexeOptions.map((option) => ({
+        text: option,
+        onPress: () => setSexe(option),
+      })),
+      { text: "Annuler", style: "cancel" },
+    ])
   }
 
   return (
@@ -125,13 +198,18 @@ export default function EditProfileModal({ visible, onClose, profile, onSave }: 
               style={styles.input}
               value={dateNaissance}
               onChangeText={setDateNaissance}
-              placeholder="YYYY-MM-DD"
+              placeholder="YYYY-MM-DD (ex: 1995-06-15)"
             />
+            <Text style={styles.helpText}>Format: YYYY-MM-DD</Text>
           </View>
 
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Sexe</Text>
-            <TextInput style={styles.input} value={sexe} onChangeText={setSexe} placeholder="Masculin/Féminin/Autre" />
+            <TouchableOpacity style={styles.selectButton} onPress={selectSexe}>
+              <Text style={[styles.selectButtonText, sexe ? styles.selectButtonTextSelected : null]}>
+                {sexe || "Sélectionner..."}
+              </Text>
+            </TouchableOpacity>
           </View>
 
           <View style={styles.inputGroup}>
@@ -168,6 +246,7 @@ export default function EditProfileModal({ visible, onClose, profile, onSave }: 
               numberOfLines={4}
             />
           </View>
+
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Matricule</Text>
             <TextInput
@@ -227,5 +306,26 @@ const styles = StyleSheet.create({
   textArea: {
     height: 100,
     textAlignVertical: "top",
+  },
+  selectButton: {
+    borderWidth: 1,
+    borderColor: Colors.lightGray,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: Colors.white,
+  },
+  selectButtonText: {
+    fontSize: 16,
+    color: Colors.gray,
+  },
+  selectButtonTextSelected: {
+    color: Colors.black,
+  },
+  helpText: {
+    fontSize: 12,
+    color: Colors.textLight,
+    marginTop: 4,
+    fontStyle: "italic",
   },
 })

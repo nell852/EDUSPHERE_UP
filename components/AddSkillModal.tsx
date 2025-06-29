@@ -21,16 +21,19 @@ interface AddSkillModalProps {
   onClose: () => void
   userId: string
   onSkillAdded: () => void
+  skill?: any // Ajouter cette ligne
 }
 
-export default function AddSkillModal({ visible, onClose, userId, onSkillAdded }: AddSkillModalProps) {
-  const [nom, setNom] = useState("")
-  const [description, setDescription] = useState("")
-  const [niveau, setNiveau] = useState("intermediaire")
-  const [experience, setExperience] = useState("")
-  const [certifications, setCertifications] = useState("")
-  const [typeCompetence, setTypeCompetence] = useState("competence_professionnelle")
+export default function AddSkillModal({ visible, onClose, userId, onSkillAdded, skill }: AddSkillModalProps) {
+  const [nom, setNom] = useState(skill?.nom || "")
+  const [description, setDescription] = useState(skill?.description || "")
+  const [niveau, setNiveau] = useState(skill?.niveau || "intermediaire")
+  const [experience, setExperience] = useState(skill?.experience || "")
+  const [certifications, setCertifications] = useState(skill?.certifications || "")
+  const [typeCompetence, setTypeCompetence] = useState(skill?.type || "competence_professionnelle")
   const [saving, setSaving] = useState(false)
+
+  const isEditing = !!skill
 
   const niveaux = ["debutant", "intermediaire", "avance", "expert"]
   const typesCompetences = [
@@ -50,49 +53,81 @@ export default function AddSkillModal({ visible, onClose, userId, onSkillAdded }
     try {
       setSaving(true)
 
-      // Préparer les données de base
       const baseData = {
-        utilisateur_id: userId,
         nom: nom.trim(),
         niveau,
         type: typeCompetence,
       }
 
-      // Essayer d'abord avec toutes les colonnes
-      try {
-        const { error } = await supabase.from("competences").insert({
-          ...baseData,
-          description: description.trim() || null,
-          experience: experience.trim() || null,
-          certifications: certifications.trim() || null,
-        })
+      if (isEditing) {
+        // Mode édition
+        try {
+          const { error } = await supabase
+            .from("competences")
+            .update({
+              ...baseData,
+              description: description.trim() || null,
+              experience: experience.trim() || null,
+              certifications: certifications.trim() || null,
+            })
+            .eq("id", skill.id)
+            .eq("utilisateur_id", userId)
 
-        if (error) throw error
-      } catch (error: any) {
-        // Si les colonnes n'existent pas, insérer seulement les données de base
-        if (error.code === "PGRST204" || error.message?.includes("column")) {
-          console.warn("Colonnes étendues non disponibles, insertion des données de base seulement")
-          const { error: basicError } = await supabase.from("competences").insert(baseData)
-          if (basicError) throw basicError
-        } else {
-          throw error
+          if (error) throw error
+        } catch (error: any) {
+          if (error.code === "PGRST204" || error.message?.includes("column")) {
+            console.warn("Colonnes étendues non disponibles, mise à jour des données de base seulement")
+            const { error: basicError } = await supabase
+              .from("competences")
+              .update(baseData)
+              .eq("id", skill.id)
+              .eq("utilisateur_id", userId)
+            if (basicError) throw basicError
+          } else {
+            throw error
+          }
+        }
+      } else {
+        // Mode création (code existant)
+        try {
+          const { error } = await supabase.from("competences").insert({
+            ...baseData,
+            utilisateur_id: userId,
+            description: description.trim() || null,
+            experience: experience.trim() || null,
+            certifications: certifications.trim() || null,
+          })
+
+          if (error) throw error
+        } catch (error: any) {
+          if (error.code === "PGRST204" || error.message?.includes("column")) {
+            console.warn("Colonnes étendues non disponibles, insertion des données de base seulement")
+            const { error: basicError } = await supabase
+              .from("competences")
+              .insert({ ...baseData, utilisateur_id: userId })
+            if (basicError) throw basicError
+          } else {
+            throw error
+          }
         }
       }
 
-      // Reset form
-      setNom("")
-      setDescription("")
-      setNiveau("intermediaire")
-      setExperience("")
-      setCertifications("")
-      setTypeCompetence("competence_professionnelle")
+      // Reset form seulement si ce n'est pas une édition
+      if (!isEditing) {
+        setNom("")
+        setDescription("")
+        setNiveau("intermediaire")
+        setExperience("")
+        setCertifications("")
+        setTypeCompetence("competence_professionnelle")
+      }
 
       onSkillAdded()
       onClose()
-      Alert.alert("Succès", "Compétence ajoutée avec succès !")
+      Alert.alert("Succès", `Compétence ${isEditing ? "mise à jour" : "ajoutée"} avec succès !`)
     } catch (error) {
       console.error("Erreur:", error)
-      Alert.alert("Erreur", "Impossible d'ajouter la compétence")
+      Alert.alert("Erreur", `Impossible ${isEditing ? "de mettre à jour" : "d'ajouter"} la compétence`)
     } finally {
       setSaving(false)
     }
@@ -106,7 +141,7 @@ export default function AddSkillModal({ visible, onClose, userId, onSkillAdded }
           <TouchableOpacity onPress={onClose}>
             <X size={24} color={Colors.black} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Ajouter une compétence</Text>
+          <Text style={styles.headerTitle}>{isEditing ? "Modifier la compétence" : "Ajouter une compétence"}</Text>
           <TouchableOpacity onPress={handleSave} disabled={saving}>
             <Plus size={24} color={saving ? Colors.gray : Colors.primary} />
           </TouchableOpacity>
