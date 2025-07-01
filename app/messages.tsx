@@ -14,8 +14,8 @@ import {
 } from "react-native"
 import { useRouter } from "expo-router"
 import { Search, MessageCircle, Plus } from "lucide-react-native"
-import { chatService } from "../../services/chatService"
-import { supabase } from "../../lib/supabase"
+import { chatService } from "../services/chatService"
+import { supabase } from "../lib/supabase"
 
 const Colors = {
   primary: "#007AFF",

@@ -1,5 +1,4 @@
 "use client"
-
 import { useState, useEffect } from "react"
 import {
   StyleSheet,
@@ -13,7 +12,9 @@ import {
   ActivityIndicator,
   ScrollView,
   Linking,
+  Dimensions,
 } from "react-native"
+import { LinearGradient } from "expo-linear-gradient"
 import {
   Camera,
   User as UserIcon,
@@ -23,8 +24,11 @@ import {
   FileText,
   Clock,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Edit3,
   X,
+  MessageCircle,
 } from "lucide-react-native"
 import { userService } from "../../services/userService"
 import { supabase } from "../../lib/supabase"
@@ -39,22 +43,7 @@ import AddProjectModal from "../../components/AddProjectModal"
 import AddLanguageModal from "../../components/AddLanguageModal"
 import AddHobbyModal from "../../components/AddHobbyModal"
 
-const Colors = {
-  primary: "#007AFF",
-  secondary: "#5856D6",
-  success: "#34C759",
-  warning: "#FF9500",
-  danger: "#FF3B30",
-  white: "#FFFFFF",
-  black: "#000000",
-  gray: "#8E8E93",
-  lightGray: "#F2F2F7",
-  darkGray: "#48484A",
-  background: "#F2F2F7",
-  gold: "#FFD700",
-  textDark: "#000000",
-  textLight: "#8E8E93",
-}
+const { width } = Dimensions.get("window")
 
 // Types pour une meilleure gestion TypeScript
 interface UserProfile {
@@ -109,12 +98,10 @@ export default function ProfileScreen() {
   const [projects, setProjects] = useState<Project[]>([])
   const [colleagues, setColleagues] = useState<Colleague[]>([])
   const [loadingData, setLoadingData] = useState(false)
-
   const [showEditModal, setShowEditModal] = useState(false)
   const [showSkillModal, setShowSkillModal] = useState(false)
   const [skills, setSkills] = useState<any[]>([])
   const [achievements, setAchievements] = useState<any[]>([])
-
   const [showProjectModal, setShowProjectModal] = useState(false)
   const [showLanguageModal, setShowLanguageModal] = useState(false)
   const [showHobbyModal, setShowHobbyModal] = useState(false)
@@ -125,6 +112,25 @@ export default function ProfileScreen() {
   const [spokenLanguages, setSpokenLanguages] = useState<any[]>([])
   const [hobbies, setHobbies] = useState<any[]>([])
 
+  // États pour les sections collapsibles
+  const [expandedSections, setExpandedSections] = useState({
+    programmingLanguages: false,
+    projects: false,
+    skills: false,
+    spokenLanguages: false,
+    hobbies: false,
+    tools: false,
+    colleagues: false,
+    achievements: false,
+  })
+
+  const toggleSection = (section: keyof typeof expandedSections) => {
+    setExpandedSections((prev) => ({
+      ...prev,
+      [section]: !prev[section],
+    }))
+  }
+
   useEffect(() => {
     loadProfile()
   }, [])
@@ -132,8 +138,6 @@ export default function ProfileScreen() {
   useEffect(() => {
     if (profile?.id) {
       loadUserData()
-
-      // Délai pour éviter les souscriptions multiples rapides
       const timer = setTimeout(() => {
         const cleanup = setupRealtimeSubscriptions()
         return cleanup
@@ -148,8 +152,6 @@ export default function ProfileScreen() {
   const loadProfile = async () => {
     try {
       setLoading(true)
-
-      // S'assurer que le profil existe
       const userProfile = await userService.ensureProfileExists()
       setProfile({
         id: userProfile.id,
@@ -162,7 +164,6 @@ export default function ProfileScreen() {
         photo_profil_url: userProfile.photo_profil_url ?? undefined,
       })
 
-      // Remplir les champs d'édition
       setNom(userProfile.nom || "")
       setPrenom(userProfile.prenom || "")
       setMatricule(userProfile.matricule || "")
@@ -181,7 +182,6 @@ export default function ProfileScreen() {
     try {
       setLoadingData(true)
       const userId = profile?.id
-
       if (!userId) return
 
       // 1. Charger les compétences/langages depuis la table competences
@@ -203,7 +203,7 @@ export default function ProfileScreen() {
         setProgrammingLanguages([])
       }
 
-      // 2. Charger les projets depuis la table projets - VERSION ROBUSTE
+      // 2. Charger les projets depuis la table projets
       try {
         const { data: userProjects, error: userProjectsError } = await supabase
           .from("projets")
@@ -216,7 +216,6 @@ export default function ProfileScreen() {
           setProjects([])
         } else {
           const formattedProjects: Project[] = []
-
           for (const project of userProjects || []) {
             const { count: collaboratorsCount } = await supabase
               .from("projet_collaborateurs")
@@ -232,13 +231,11 @@ export default function ProfileScreen() {
               lastUpdated: formatTimeAgo(project.updated_at),
               status: project.statut || "en_cours",
               visibility: project.visibilite || "prive",
-              // Ajouter les nouveaux champs avec des valeurs par défaut
               outils_utilises: project.outils_utilises || "",
               interface_principale: project.interface_principale || "",
               code_source: project.code_source || "",
             })
           }
-
           setProjects(formattedProjects)
         }
       } catch (error) {
@@ -368,6 +365,7 @@ export default function ProfileScreen() {
           progress: Math.min((hobbies.length / 3) * 100, 100),
         },
       ]
+
       setAchievements(achievementsData)
 
       // 7. Charger les collègues depuis les clubs
@@ -379,7 +377,6 @@ export default function ProfileScreen() {
 
         if (!userClubsError && userClubs && userClubs.length > 0) {
           const clubIds = userClubs.map((club) => club.club_id)
-
           const { data: clubMembers, error: clubMembersError } = await supabase
             .from("club_membres")
             .select(`
@@ -397,13 +394,10 @@ export default function ProfileScreen() {
 
           if (!clubMembersError && clubMembers) {
             const uniqueColleagues = new Map<string, Colleague>()
-
             clubMembers.forEach((member: any) => {
               const colleague = member.utilisateurs
-
               if (colleague && typeof colleague === "object" && colleague.id) {
                 const colleagueId = colleague.id
-
                 if (!uniqueColleagues.has(colleagueId)) {
                   uniqueColleagues.set(colleagueId, {
                     id: colleagueId,
@@ -419,7 +413,6 @@ export default function ProfileScreen() {
                 }
               }
             })
-
             setColleagues(Array.from(uniqueColleagues.values()))
           } else {
             setColleagues([])
@@ -441,9 +434,7 @@ export default function ProfileScreen() {
   const setupRealtimeSubscriptions = () => {
     if (!profile?.id) return () => {}
 
-    // Créer un canal unique avec un nom spécifique
     const channelName = `projects_changes_${profile.id}_${Date.now()}`
-
     const projectsSubscription = supabase
       .channel(channelName)
       .on(
@@ -478,7 +469,6 @@ export default function ProfileScreen() {
   const saveProfile = async () => {
     try {
       setSaving(true)
-
       const updatedProfile = await userService.createOrUpdateProfile({
         nom: nom.trim(),
         prenom: prenom.trim(),
@@ -487,6 +477,7 @@ export default function ProfileScreen() {
         sexe: sexe || undefined,
         photo_profil_url: photoUrl || undefined,
       })
+
       setProfile({
         ...updatedProfile,
         nom: updatedProfile.nom ?? "",
@@ -497,6 +488,7 @@ export default function ProfileScreen() {
         sexe: updatedProfile.sexe ?? undefined,
         photo_profil_url: updatedProfile.photo_profil_url ?? undefined,
       })
+
       setEditing(false)
       Alert.alert("Succès", "Profil mis à jour avec succès !")
     } catch (error) {
@@ -509,6 +501,7 @@ export default function ProfileScreen() {
 
   const pickImage = async () => {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync()
+
     if (!permissionResult.granted) {
       Alert.alert("Erreur", "Permission d'accès à la galerie refusée")
       return
@@ -528,6 +521,10 @@ export default function ProfileScreen() {
 
   const openSettings = () => {
     router.push("/settings")
+  }
+
+  const openMessages = () => {
+    router.push("/messages")
   }
 
   const addLanguage = () => {
@@ -726,18 +723,18 @@ export default function ProfileScreen() {
       <title>CV - ${profile?.prenom} ${profile?.nom}</title>
       <style>
         body { font-family: Arial, sans-serif; margin: 40px; color: #333; line-height: 1.6; }
-        .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #007AFF; padding-bottom: 20px; }
-        .name { font-size: 28px; font-weight: bold; color: #007AFF; margin-bottom: 10px; }
+        .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #3B82F6; padding-bottom: 20px; }
+        .name { font-size: 28px; font-weight: bold; color: #3B82F6; margin-bottom: 10px; }
         .contact { margin: 5px 0; color: #666; }
         .section { margin: 25px 0; }
-        .section-title { font-size: 20px; font-weight: bold; color: #007AFF; border-bottom: 1px solid #007AFF; padding-bottom: 5px; margin-bottom: 15px; }
-        .item { margin: 15px 0; padding: 15px; background: #f9f9f9; border-radius: 8px; border-left: 4px solid #007AFF; }
+        .section-title { font-size: 20px; font-weight: bold; color: #3B82F6; border-bottom: 1px solid #3B82F6; padding-bottom: 5px; margin-bottom: 15px; }
+        .item { margin: 15px 0; padding: 15px; background: #f9f9f9; border-radius: 8px; border-left: 4px solid #3B82F6; }
         .item-title { font-weight: bold; color: #333; font-size: 16px; }
-        .item-level { display: inline-block; background: #007AFF; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px; margin-left: 10px; }
+        .item-level { display: inline-block; background: #3B82F6; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px; margin-left: 10px; }
         .item-description { margin-top: 8px; color: #666; }
         .languages-grid, .hobbies-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
         .project-languages { margin-top: 8px; }
-        .project-language { display: inline-block; background: #FFD700; color: #333; padding: 2px 6px; border-radius: 4px; font-size: 11px; margin-right: 5px; }
+        .project-language { display: inline-block; background: #60A5FA; color: #333; padding: 2px 6px; border-radius: 4px; font-size: 11px; margin-right: 5px; }
       </style>
     </head>
     <body>
@@ -894,13 +891,9 @@ export default function ProfileScreen() {
     }
 
     const url = urls[editor as keyof typeof urls]
-
     try {
       console.log(`🚀 Ouverture de ${editor}: ${url}`)
-
-      // Vérifier si l'URL peut être ouverte
       const supported = await Linking.canOpenURL(url)
-
       if (supported) {
         await Linking.openURL(url)
         console.log(`✅ ${editor} ouvert avec succès`)
@@ -913,7 +906,6 @@ export default function ProfileScreen() {
             {
               text: "Copier l'URL",
               onPress: () => {
-                // Dans une vraie app, vous pourriez utiliser Clipboard.setString(url)
                 Alert.alert("URL copiée", `URL: ${url}`)
               },
             },
@@ -941,18 +933,61 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     return () => {
-      // Nettoyage global au démontage du composant
       console.log("🧹 Nettoyage global des souscriptions")
       supabase.removeAllChannels()
     }
   }, [])
 
+  // Composant pour les en-têtes de section collapsibles
+  const CollapsibleSectionHeader = ({
+    title,
+    count,
+    sectionKey,
+    onAdd,
+  }: {
+    title: string
+    count: number
+    sectionKey: keyof typeof expandedSections
+    onAdd: () => void
+  }) => (
+    <TouchableOpacity style={styles.collapsibleHeader} onPress={() => toggleSection(sectionKey)} activeOpacity={0.8}>
+      <LinearGradient colors={["#3B82F6", "#60A5FA"]} style={styles.collapsibleHeaderGradient}>
+        <View style={styles.collapsibleHeaderLeft}>
+          <Text style={styles.collapsibleHeaderTitle}>
+            {title} ({count})
+          </Text>
+        </View>
+        <View style={styles.collapsibleHeaderRight}>
+          <TouchableOpacity
+            style={styles.addButtonSmall}
+            onPress={(e) => {
+              e.stopPropagation()
+              onAdd()
+            }}
+            activeOpacity={0.8}
+          >
+            <LinearGradient colors={["#10B981", "#34D399"]} style={styles.addButtonSmallGradient}>
+              <Text style={styles.addButtonSmallText}>+</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+          {expandedSections[sectionKey] ? (
+            <ChevronUp size={16} color="#FFFFFF" />
+          ) : (
+            <ChevronDown size={16} color="#FFFFFF" />
+          )}
+        </View>
+      </LinearGradient>
+    </TouchableOpacity>
+  )
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={styles.loadingText}>Chargement du profil...</Text>
+          <LinearGradient colors={["#EBF4FF", "#DBEAFE"]} style={styles.loadingCard}>
+            <ActivityIndicator size="large" color="#3B82F6" />
+            <Text style={styles.loadingText}>Chargement du profil...</Text>
+          </LinearGradient>
         </View>
       </SafeAreaView>
     )
@@ -963,94 +998,120 @@ export default function ProfileScreen() {
       <StatusBar style="auto" />
 
       {/* Profile header */}
-      <View style={styles.header}>
+      <LinearGradient colors={["#FFFFFF", "#F8F9FA"]} style={styles.header}>
         <View style={styles.profileSection}>
           <View style={styles.photoContainer}>
             {photoUrl ? (
               <Image source={{ uri: photoUrl }} style={styles.profileImage} />
             ) : (
-              <View style={styles.placeholderPhoto}>
-                <UserIcon size={30} color={Colors.gray} />
-              </View>
+              <LinearGradient colors={["#F3F4F6", "#E5E7EB"]} style={styles.placeholderPhoto}>
+                <UserIcon size={20} color="#9CA3AF" />
+              </LinearGradient>
             )}
             {editing && (
-              <TouchableOpacity style={styles.cameraButton} onPress={pickImage}>
-                <Camera size={16} color={Colors.white} />
+              <TouchableOpacity style={styles.cameraButton} onPress={pickImage} activeOpacity={0.8}>
+                <LinearGradient colors={["#3B82F6", "#60A5FA"]} style={styles.cameraButtonGradient}>
+                  <Camera size={12} color="#FFFFFF" />
+                </LinearGradient>
               </TouchableOpacity>
             )}
           </View>
+
           <View style={styles.profileInfo}>
             {editing ? (
               <View>
-                <TextInput
-                  style={styles.editNameInput}
-                  value={`${prenom} ${nom}`}
-                  onChangeText={(text) => {
-                    const parts = text.split(" ")
-                    setPrenom(parts[0] || "")
-                    setNom(parts.slice(1).join(" ") || "")
-                  }}
-                  placeholder="Nom complet"
-                />
-                <TextInput
-                  style={styles.editMatriculeInput}
-                  value={matricule}
-                  onChangeText={setMatricule}
-                  placeholder="Matricule"
-                />
+                <LinearGradient colors={["#F8F9FA", "#FFFFFF"]} style={styles.editInputContainer}>
+                  <TextInput
+                    style={styles.editNameInput}
+                    value={`${prenom} ${nom}`}
+                    onChangeText={(text) => {
+                      const parts = text.split(" ")
+                      setPrenom(parts[0] || "")
+                      setNom(parts.slice(1).join(" ") || "")
+                    }}
+                    placeholder="Nom complet"
+                    placeholderTextColor="#9CA3AF"
+                  />
+                </LinearGradient>
+                <LinearGradient colors={["#F8F9FA", "#FFFFFF"]} style={styles.editInputContainer}>
+                  <TextInput
+                    style={styles.editMatriculeInput}
+                    value={matricule}
+                    onChangeText={setMatricule}
+                    placeholder="Matricule"
+                    placeholderTextColor="#9CA3AF"
+                  />
+                </LinearGradient>
               </View>
             ) : (
               <View>
                 <Text style={styles.profileName}>
                   {profile?.prenom} {profile?.nom}
                 </Text>
-                <Text style={styles.profileMatricule}>Matricule: {profile?.matricule || "Non défini"}</Text>
+                <Text style={styles.profileMatricule}>{profile?.matricule || "Non défini"}</Text>
                 <Text style={styles.profileSchool}>{profile?.email}</Text>
               </View>
             )}
           </View>
         </View>
+
         <View style={styles.headerButtons}>
           <TouchableOpacity
             style={styles.editButton}
             onPress={() => (editing ? saveProfile() : setEditing(true))}
             disabled={saving}
+            activeOpacity={0.8}
           >
-            {saving ? (
-              <ActivityIndicator size="small" color={Colors.white} />
-            ) : (
-              <Edit3 size={20} color={Colors.white} />
-            )}
+            <LinearGradient colors={["#3B82F6", "#60A5FA"]} style={styles.editButtonGradient}>
+              {saving ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Edit3 size={14} color="#FFFFFF" />}
+            </LinearGradient>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.settingsButton} onPress={openSettings}>
-            <Settings size={24} color={Colors.darkGray} />
+
+          <TouchableOpacity style={styles.messageButton} onPress={openMessages} activeOpacity={0.8}>
+            <LinearGradient colors={["#EBF4FF", "#DBEAFE"]} style={styles.messageButtonGradient}>
+              <MessageCircle size={16} color="#3B82F6" />
+            </LinearGradient>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.settingsButton} onPress={openSettings} activeOpacity={0.8}>
+            <LinearGradient colors={["#F3F4F6", "#E5E7EB"]} style={styles.settingsButtonGradient}>
+              <Settings size={16} color="#6B7280" />
+            </LinearGradient>
           </TouchableOpacity>
         </View>
-      </View>
+      </LinearGradient>
 
       {/* Tabs */}
       <View style={styles.tabsContainer}>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === "journey" && styles.activeTab]}
-          onPress={() => setActiveTab("journey")}
-        >
-          <Text style={[styles.tabText, activeTab === "journey" && styles.activeTabText]}>Mon Parcours</Text>
+        <TouchableOpacity style={styles.tab} onPress={() => setActiveTab("journey")} activeOpacity={0.8}>
+          <LinearGradient
+            colors={activeTab === "journey" ? ["#3B82F6", "#60A5FA"] : ["#F8F9FA", "#FFFFFF"]}
+            style={styles.tabGradient}
+          >
+            <Text style={[styles.tabText, activeTab === "journey" && styles.activeTabText]}>Mon Parcours</Text>
+          </LinearGradient>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === "colleagues" && styles.activeTab]}
-          onPress={() => setActiveTab("colleagues")}
-        >
-          <Text style={[styles.tabText, activeTab === "colleagues" && styles.activeTabText]}>
-            Collègues ({colleagues.length})
-          </Text>
+
+        <TouchableOpacity style={styles.tab} onPress={() => setActiveTab("colleagues")} activeOpacity={0.8}>
+          <LinearGradient
+            colors={activeTab === "colleagues" ? ["#3B82F6", "#60A5FA"] : ["#F8F9FA", "#FFFFFF"]}
+            style={styles.tabGradient}
+          >
+            <Text style={[styles.tabText, activeTab === "colleagues" && styles.activeTabText]}>
+              Collègues ({colleagues.length})
+            </Text>
+          </LinearGradient>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === "achievements" && styles.activeTab]}
-          onPress={() => setActiveTab("achievements")}
-        >
-          <Text style={[styles.tabText, activeTab === "achievements" && styles.activeTabText]}>
-            Réalisations ({achievements.filter((a) => a.earned).length})
-          </Text>
+
+        <TouchableOpacity style={styles.tab} onPress={() => setActiveTab("achievements")} activeOpacity={0.8}>
+          <LinearGradient
+            colors={activeTab === "achievements" ? ["#3B82F6", "#60A5FA"] : ["#F8F9FA", "#FFFFFF"]}
+            style={styles.tabGradient}
+          >
+            <Text style={[styles.tabText, activeTab === "achievements" && styles.activeTabText]}>
+              Réalisations ({achievements.filter((a) => a.earned).length})
+            </Text>
+          </LinearGradient>
         </TouchableOpacity>
       </View>
 
@@ -1058,8 +1119,10 @@ export default function ProfileScreen() {
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {loadingData && (
           <View style={styles.loadingDataContainer}>
-            <ActivityIndicator size="small" color={Colors.primary} />
-            <Text style={styles.loadingDataText}>Chargement des données...</Text>
+            <LinearGradient colors={["#EBF4FF", "#DBEAFE"]} style={styles.loadingDataCard}>
+              <ActivityIndicator size="small" color="#3B82F6" />
+              <Text style={styles.loadingDataText}>Chargement des données...</Text>
+            </LinearGradient>
           </View>
         )}
 
@@ -1068,350 +1131,429 @@ export default function ProfileScreen() {
             {/* Informations personnelles en mode édition */}
             {editing && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Informations personnelles</Text>
-                <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Date de naissance</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={dateNaissance}
-                    onChangeText={setDateNaissance}
-                    placeholder="YYYY-MM-DD"
-                    placeholderTextColor={Colors.gray}
-                  />
-                </View>
-                <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Sexe</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={sexe}
-                    onChangeText={setSexe}
-                    placeholder="Masculin/Féminin/Autre"
-                    placeholderTextColor={Colors.gray}
-                  />
-                </View>
+                <LinearGradient colors={["#EBF4FF", "#DBEAFE"]} style={styles.sectionCard}>
+                  <Text style={styles.sectionTitle}>Informations personnelles</Text>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>Date de naissance</Text>
+                    <LinearGradient colors={["#F8F9FA", "#FFFFFF"]} style={styles.inputContainer}>
+                      <TextInput
+                        style={styles.input}
+                        value={dateNaissance}
+                        onChangeText={setDateNaissance}
+                        placeholder="YYYY-MM-DD"
+                        placeholderTextColor="#9CA3AF"
+                      />
+                    </LinearGradient>
+                  </View>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>Sexe</Text>
+                    <LinearGradient colors={["#F8F9FA", "#FFFFFF"]} style={styles.inputContainer}>
+                      <TextInput
+                        style={styles.input}
+                        value={sexe}
+                        onChangeText={setSexe}
+                        placeholder="Masculin/Féminin/Autre"
+                        placeholderTextColor="#9CA3AF"
+                      />
+                    </LinearGradient>
+                  </View>
+                </LinearGradient>
               </View>
             )}
 
             {/* Programming Languages */}
             <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Langages de programmation</Text>
-                <TouchableOpacity style={styles.addButton} onPress={addLanguage}>
-                  <Text style={styles.addButtonText}>Ajouter</Text>
-                </TouchableOpacity>
-              </View>
-              {programmingLanguages.length > 0 ? (
-                <View style={styles.languagesContainer}>
-                  {programmingLanguages.map((language, index) => (
-                    <View key={index} style={styles.languageChip}>
-                      <Text style={styles.languageText}>{language}</Text>
-                      <TouchableOpacity style={styles.removeLanguageButton} onPress={() => removeLanguage(language)}>
-                        <X size={14} color={Colors.gray} />
-                      </TouchableOpacity>
+              <CollapsibleSectionHeader
+                title="Langages de programmation"
+                count={programmingLanguages.length}
+                sectionKey="programmingLanguages"
+                onAdd={addLanguage}
+              />
+
+              {expandedSections.programmingLanguages && (
+                <LinearGradient colors={["#FFFFFF", "#F8F9FA"]} style={styles.sectionContent}>
+                  {programmingLanguages.length > 0 ? (
+                    <View style={styles.languagesContainer}>
+                      {programmingLanguages.map((language, index) => (
+                        <LinearGradient key={index} colors={["#EBF4FF", "#DBEAFE"]} style={styles.languageChip}>
+                          <Text style={styles.languageText}>{language}</Text>
+                          <TouchableOpacity
+                            style={styles.removeLanguageButton}
+                            onPress={() => removeLanguage(language)}
+                            activeOpacity={0.8}
+                          >
+                            <X size={10} color="#6B7280" />
+                          </TouchableOpacity>
+                        </LinearGradient>
+                      ))}
                     </View>
-                  ))}
-                </View>
-              ) : (
-                <Text style={styles.emptyText}>Aucun langage ajouté</Text>
+                  ) : (
+                    <Text style={styles.emptyText}>Aucun langage ajouté</Text>
+                  )}
+                </LinearGradient>
               )}
             </View>
 
             {/* Projects */}
             <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Projets ({projects.length})</Text>
-                <TouchableOpacity style={styles.addButton} onPress={addProject}>
-                  <Text style={styles.addButtonText}>Ajouter</Text>
-                </TouchableOpacity>
-              </View>
+              <CollapsibleSectionHeader
+                title="Projets"
+                count={projects.length}
+                sectionKey="projects"
+                onAdd={addProject}
+              />
 
-              {projects.length > 0 ? (
-                projects.map((project) => (
-                  <TouchableOpacity
-                    key={project.id}
-                    style={styles.projectCard}
-                    onPress={() => editProject(project)}
-                    onLongPress={() => deleteProject(project.id)}
-                  >
-                    <View style={styles.projectHeader}>
-                      <Text style={styles.projectName}>{project.name}</Text>
-                      <View style={styles.projectStatus}>
-                        <View
-                          style={[
-                            styles.statusDot,
-                            { backgroundColor: project.status === "termine" ? Colors.success : Colors.warning },
-                          ]}
-                        />
-                        <ChevronRight size={16} color={Colors.darkGray} />
-                      </View>
-                    </View>
-                    <Text style={styles.projectDescription}>{project.description}</Text>
-
-                    {project.languages.length > 0 && (
-                      <View style={styles.projectLanguages}>
-                        {project.languages.map((language, index) => (
-                          <View key={index} style={styles.projectLanguageChip}>
-                            <Text style={styles.projectLanguageText}>{language}</Text>
+              {expandedSections.projects && (
+                <LinearGradient colors={["#FFFFFF", "#F8F9FA"]} style={styles.sectionContent}>
+                  {projects.length > 0 ? (
+                    projects.map((project) => (
+                      <TouchableOpacity
+                        key={project.id}
+                        style={styles.projectCard}
+                        onPress={() => editProject(project)}
+                        onLongPress={() => deleteProject(project.id)}
+                        activeOpacity={0.8}
+                      >
+                        <LinearGradient colors={["#FFFFFF", "#F8F9FA"]} style={styles.projectCardGradient}>
+                          <View style={styles.projectHeader}>
+                            <Text style={styles.projectName}>{project.name}</Text>
+                            <View style={styles.projectStatus}>
+                              <LinearGradient
+                                colors={project.status === "termine" ? ["#10B981", "#34D399"] : ["#F59E0B", "#FBBF24"]}
+                                style={styles.statusDot}
+                              />
+                              <ChevronRight size={12} color="#6B7280" />
+                            </View>
                           </View>
-                        ))}
-                      </View>
-                    )}
-
-                    <View style={styles.projectFooter}>
-                      <View style={styles.projectCollaborators}>
-                        <Users size={14} color={Colors.textLight} />
-                        <Text style={styles.projectFooterText}>
-                          {project.collaborators} collaborateur{project.collaborators > 1 ? "s" : ""}
-                        </Text>
-                      </View>
-                      <View style={styles.projectLastUpdated}>
-                        <Clock size={14} color={Colors.textLight} />
-                        <Text style={styles.projectFooterText}>il y a {project.lastUpdated}</Text>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                ))
-              ) : (
-                <Text style={styles.emptyText}>Aucun projet créé</Text>
+                          <Text style={styles.projectDescription}>{project.description}</Text>
+                          {project.languages.length > 0 && (
+                            <View style={styles.projectLanguages}>
+                              {project.languages.map((language, index) => (
+                                <LinearGradient
+                                  key={index}
+                                  colors={["#60A5FA", "#93C5FD"]}
+                                  style={styles.projectLanguageChip}
+                                >
+                                  <Text style={styles.projectLanguageText}>{language}</Text>
+                                </LinearGradient>
+                              ))}
+                            </View>
+                          )}
+                          <View style={styles.projectFooter}>
+                            <View style={styles.projectCollaborators}>
+                              <Users size={10} color="#6B7280" />
+                              <Text style={styles.projectFooterText}>
+                                {project.collaborators} collaborateur{project.collaborators > 1 ? "s" : ""}
+                              </Text>
+                            </View>
+                            <View style={styles.projectLastUpdated}>
+                              <Clock size={10} color="#6B7280" />
+                              <Text style={styles.projectFooterText}>il y a {project.lastUpdated}</Text>
+                            </View>
+                          </View>
+                        </LinearGradient>
+                      </TouchableOpacity>
+                    ))
+                  ) : (
+                    <Text style={styles.emptyText}>Aucun projet créé</Text>
+                  )}
+                </LinearGradient>
               )}
             </View>
 
             {/* Skills Section */}
             <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Compétences Professionnelles</Text>
-                <TouchableOpacity style={styles.addButton} onPress={() => setShowSkillModal(true)}>
-                  <Text style={styles.addButtonText}>Ajouter</Text>
-                </TouchableOpacity>
-              </View>
+              <CollapsibleSectionHeader
+                title="Compétences Professionnelles"
+                count={skills.length}
+                sectionKey="skills"
+                onAdd={() => setShowSkillModal(true)}
+              />
 
-              {skills.length > 0 ? (
-                skills.map((skill) => (
-                  <TouchableOpacity
-                    key={skill.id}
-                    style={styles.skillCard}
-                    onPress={() => editSkill(skill)}
-                    onLongPress={() => deleteSkill(skill.id)}
-                  >
-                    <View style={styles.skillHeader}>
-                      <Text style={styles.skillName}>{skill.nom}</Text>
-                      <View
-                        style={[
-                          styles.skillLevel,
-                          {
-                            backgroundColor:
-                              skill.niveau === "expert"
-                                ? "#4CAF50"
-                                : skill.niveau === "avance"
-                                  ? "#FF9500"
-                                  : skill.niveau === "intermediaire"
-                                    ? "#007AFF"
-                                    : "#8E8E93",
-                          },
-                        ]}
+              {expandedSections.skills && (
+                <LinearGradient colors={["#FFFFFF", "#F8F9FA"]} style={styles.sectionContent}>
+                  {skills.length > 0 ? (
+                    skills.map((skill) => (
+                      <TouchableOpacity
+                        key={skill.id}
+                        style={styles.skillCard}
+                        onPress={() => editSkill(skill)}
+                        onLongPress={() => deleteSkill(skill.id)}
+                        activeOpacity={0.8}
                       >
-                        <Text style={styles.skillLevelText}>{skill.niveau}</Text>
-                      </View>
-                    </View>
-                    {skill.description && <Text style={styles.skillDescription}>{skill.description}</Text>}
-                    {skill.experience && <Text style={styles.skillExperience}>Expérience: {skill.experience}</Text>}
-                    {skill.certifications && (
-                      <Text style={styles.skillCertifications}>Certifications: {skill.certifications}</Text>
-                    )}
-                  </TouchableOpacity>
-                ))
-              ) : (
-                <Text style={styles.emptyText}>Aucune compétence ajoutée</Text>
+                        <LinearGradient colors={["#FFFFFF", "#F8F9FA"]} style={styles.skillCardGradient}>
+                          <View style={styles.skillHeader}>
+                            <Text style={styles.skillName}>{skill.nom}</Text>
+                            <LinearGradient
+                              colors={
+                                skill.niveau === "expert"
+                                  ? ["#10B981", "#34D399"]
+                                  : skill.niveau === "avance"
+                                    ? ["#F59E0B", "#FBBF24"]
+                                    : skill.niveau === "intermediaire"
+                                      ? ["#3B82F6", "#60A5FA"]
+                                      : ["#6B7280", "#9CA3AF"]
+                              }
+                              style={styles.skillLevel}
+                            >
+                              <Text style={styles.skillLevelText}>{skill.niveau}</Text>
+                            </LinearGradient>
+                          </View>
+                          {skill.description && <Text style={styles.skillDescription}>{skill.description}</Text>}
+                          {skill.experience && (
+                            <Text style={styles.skillExperience}>Expérience: {skill.experience}</Text>
+                          )}
+                          {skill.certifications && (
+                            <Text style={styles.skillCertifications}>Certifications: {skill.certifications}</Text>
+                          )}
+                        </LinearGradient>
+                      </TouchableOpacity>
+                    ))
+                  ) : (
+                    <Text style={styles.emptyText}>Aucune compétence ajoutée</Text>
+                  )}
+                </LinearGradient>
               )}
             </View>
 
             {/* Langues parlées */}
             <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Langues parlées ({spokenLanguages.length})</Text>
-                <TouchableOpacity style={styles.addButton} onPress={addSpokenLanguage}>
-                  <Text style={styles.addButtonText}>Ajouter</Text>
-                </TouchableOpacity>
-              </View>
+              <CollapsibleSectionHeader
+                title="Langues parlées"
+                count={spokenLanguages.length}
+                sectionKey="spokenLanguages"
+                onAdd={addSpokenLanguage}
+              />
 
-              {spokenLanguages.length > 0 ? (
-                spokenLanguages.map((language) => (
-                  <TouchableOpacity
-                    key={language.id}
-                    style={styles.skillCard}
-                    onPress={() => editSpokenLanguage(language)}
-                    onLongPress={() => deleteSpokenLanguage(language.id)}
-                  >
-                    <View style={styles.skillHeader}>
-                      <Text style={styles.skillName}>{language.langue}</Text>
-                      <View
-                        style={[
-                          styles.skillLevel,
-                          {
-                            backgroundColor:
-                              language.niveau === "natif"
-                                ? "#4CAF50"
-                                : language.niveau === "avance"
-                                  ? "#FF9500"
-                                  : language.niveau === "intermediaire"
-                                    ? "#007AFF"
-                                    : "#8E8E93",
-                          },
-                        ]}
+              {expandedSections.spokenLanguages && (
+                <LinearGradient colors={["#FFFFFF", "#F8F9FA"]} style={styles.sectionContent}>
+                  {spokenLanguages.length > 0 ? (
+                    spokenLanguages.map((language) => (
+                      <TouchableOpacity
+                        key={language.id}
+                        style={styles.skillCard}
+                        onPress={() => editSpokenLanguage(language)}
+                        onLongPress={() => deleteSpokenLanguage(language.id)}
+                        activeOpacity={0.8}
                       >
-                        <Text style={styles.skillLevelText}>{language.niveau}</Text>
-                      </View>
-                    </View>
-                    {language.certification && (
-                      <Text style={styles.skillCertifications}>Certification: {language.certification}</Text>
-                    )}
-                  </TouchableOpacity>
-                ))
-              ) : (
-                <Text style={styles.emptyText}>Aucune langue ajoutée</Text>
+                        <LinearGradient colors={["#FFFFFF", "#F8F9FA"]} style={styles.skillCardGradient}>
+                          <View style={styles.skillHeader}>
+                            <Text style={styles.skillName}>{language.langue}</Text>
+                            <LinearGradient
+                              colors={
+                                language.niveau === "natif"
+                                  ? ["#10B981", "#34D399"]
+                                  : language.niveau === "avance"
+                                    ? ["#F59E0B", "#FBBF24"]
+                                    : language.niveau === "intermediaire"
+                                      ? ["#3B82F6", "#60A5FA"]
+                                      : ["#6B7280", "#9CA3AF"]
+                              }
+                              style={styles.skillLevel}
+                            >
+                              <Text style={styles.skillLevelText}>{language.niveau}</Text>
+                            </LinearGradient>
+                          </View>
+                          {language.certification && (
+                            <Text style={styles.skillCertifications}>Certification: {language.certification}</Text>
+                          )}
+                        </LinearGradient>
+                      </TouchableOpacity>
+                    ))
+                  ) : (
+                    <Text style={styles.emptyText}>Aucune langue ajoutée</Text>
+                  )}
+                </LinearGradient>
               )}
             </View>
 
             {/* Loisirs */}
             <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Loisirs & Centres d'intérêt ({hobbies.length})</Text>
-                <TouchableOpacity style={styles.addButton} onPress={addHobby}>
-                  <Text style={styles.addButtonText}>Ajouter</Text>
-                </TouchableOpacity>
-              </View>
+              <CollapsibleSectionHeader
+                title="Loisirs & Centres d'intérêt"
+                count={hobbies.length}
+                sectionKey="hobbies"
+                onAdd={addHobby}
+              />
 
-              {hobbies.length > 0 ? (
-                hobbies.map((hobby) => (
-                  <TouchableOpacity
-                    key={hobby.id}
-                    style={styles.skillCard}
-                    onPress={() => editHobby(hobby)}
-                    onLongPress={() => deleteHobby(hobby.id)}
-                  >
-                    <View style={styles.skillHeader}>
-                      <Text style={styles.skillName}>{hobby.nom}</Text>
-                      {hobby.niveau && (
-                        <View
-                          style={[
-                            styles.skillLevel,
-                            {
-                              backgroundColor:
-                                hobby.niveau === "expert"
-                                  ? "#4CAF50"
-                                  : hobby.niveau === "avance"
-                                    ? "#FF9500"
-                                    : hobby.niveau === "intermediaire"
-                                      ? "#007AFF"
-                                      : "#8E8E93",
-                            },
-                          ]}
-                        >
-                          <Text style={styles.skillLevelText}>{hobby.niveau}</Text>
-                        </View>
-                      )}
-                    </View>
-                    {hobby.description && <Text style={styles.skillDescription}>{hobby.description}</Text>}
-                  </TouchableOpacity>
-                ))
-              ) : (
-                <Text style={styles.emptyText}>Aucun loisir ajouté</Text>
+              {expandedSections.hobbies && (
+                <LinearGradient colors={["#FFFFFF", "#F8F9FA"]} style={styles.sectionContent}>
+                  {hobbies.length > 0 ? (
+                    hobbies.map((hobby) => (
+                      <TouchableOpacity
+                        key={hobby.id}
+                        style={styles.skillCard}
+                        onPress={() => editHobby(hobby)}
+                        onLongPress={() => deleteHobby(hobby.id)}
+                        activeOpacity={0.8}
+                      >
+                        <LinearGradient colors={["#FFFFFF", "#F8F9FA"]} style={styles.skillCardGradient}>
+                          <View style={styles.skillHeader}>
+                            <Text style={styles.skillName}>{hobby.nom}</Text>
+                            {hobby.niveau && (
+                              <LinearGradient
+                                colors={
+                                  hobby.niveau === "expert"
+                                    ? ["#10B981", "#34D399"]
+                                    : hobby.niveau === "avance"
+                                      ? ["#F59E0B", "#FBBF24"]
+                                      : hobby.niveau === "intermediaire"
+                                        ? ["#3B82F6", "#60A5FA"]
+                                        : ["#6B7280", "#9CA3AF"]
+                                }
+                                style={styles.skillLevel}
+                              >
+                                <Text style={styles.skillLevelText}>{hobby.niveau}</Text>
+                              </LinearGradient>
+                            )}
+                          </View>
+                          {hobby.description && <Text style={styles.skillDescription}>{hobby.description}</Text>}
+                        </LinearGradient>
+                      </TouchableOpacity>
+                    ))
+                  ) : (
+                    <Text style={styles.emptyText}>Aucun loisir ajouté</Text>
+                  )}
+                </LinearGradient>
               )}
             </View>
 
             {/* Tools */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Outils</Text>
+              <CollapsibleSectionHeader title="Outils" count={2} sectionKey="tools" onAdd={() => {}} />
 
-              <TouchableOpacity style={styles.toolCard} onPress={generateCV}>
-                <View style={styles.toolIcon}>
-                  <FileText size={24} color={Colors.white} />
-                </View>
-                <View style={styles.toolInfo}>
-                  <Text style={styles.toolName}>Générer CV</Text>
-                  <Text style={styles.toolDescription}>Créer un CV professionnel basé sur vos données de profil</Text>
-                </View>
-                <ChevronRight size={16} color={Colors.darkGray} />
-              </TouchableOpacity>
+              {expandedSections.tools && (
+                <LinearGradient colors={["#FFFFFF", "#F8F9FA"]} style={styles.sectionContent}>
+                  <TouchableOpacity style={styles.toolCard} onPress={generateCV} activeOpacity={0.8}>
+                    <LinearGradient colors={["#FFFFFF", "#F8F9FA"]} style={styles.toolCardGradient}>
+                      <LinearGradient colors={["#3B82F6", "#60A5FA"]} style={styles.toolIcon}>
+                        <FileText size={16} color="#FFFFFF" />
+                      </LinearGradient>
+                      <View style={styles.toolInfo}>
+                        <Text style={styles.toolName}>Générer CV</Text>
+                        <Text style={styles.toolDescription}>Créer un CV professionnel basé sur vos données</Text>
+                      </View>
+                      <ChevronRight size={12} color="#6B7280" />
+                    </LinearGradient>
+                  </TouchableOpacity>
 
-              <TouchableOpacity style={styles.toolCard} onPress={openCodeEditor}>
-                <View style={[styles.toolIcon, { backgroundColor: "#4CAF50" }]}>
-                  <Code size={24} color={Colors.white} />
-                </View>
-                <View style={styles.toolInfo}>
-                  <Text style={styles.toolName}>Environnements de développement</Text>
-                  <Text style={styles.toolDescription}>Accéder aux environnements de codage en ligne</Text>
-                </View>
-                <ChevronRight size={16} color={Colors.darkGray} />
-              </TouchableOpacity>
+                  <TouchableOpacity style={styles.toolCard} onPress={openCodeEditor} activeOpacity={0.8}>
+                    <LinearGradient colors={["#FFFFFF", "#F8F9FA"]} style={styles.toolCardGradient}>
+                      <LinearGradient colors={["#10B981", "#34D399"]} style={styles.toolIcon}>
+                        <Code size={16} color="#FFFFFF" />
+                      </LinearGradient>
+                      <View style={styles.toolInfo}>
+                        <Text style={styles.toolName}>Environnements de développement</Text>
+                        <Text style={styles.toolDescription}>Accéder aux environnements de codage en ligne</Text>
+                      </View>
+                      <ChevronRight size={12} color="#6B7280" />
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </LinearGradient>
+              )}
             </View>
           </View>
         )}
 
         {activeTab === "colleagues" && (
           <View>
-            {colleagues.length > 0 ? (
-              <View style={styles.section}>
-                {colleagues.map((colleague) => (
-                  <TouchableOpacity key={colleague.id} style={styles.colleagueCard}>
-                    <View style={styles.colleaguePhoto}>
-                      {colleague.photo ? (
-                        <Image source={{ uri: colleague.photo }} style={styles.colleagueImage} />
-                      ) : (
-                        <View style={styles.colleaguePlaceholder}>
-                          <UserIcon size={20} color={Colors.gray} />
-                        </View>
-                      )}
+            <View style={styles.section}>
+              <CollapsibleSectionHeader
+                title="Mes Collègues"
+                count={colleagues.length}
+                sectionKey="colleagues"
+                onAdd={() => {}}
+              />
+
+              {expandedSections.colleagues && (
+                <LinearGradient colors={["#FFFFFF", "#F8F9FA"]} style={styles.sectionContent}>
+                  {colleagues.length > 0 ? (
+                    colleagues.map((colleague) => (
+                      <TouchableOpacity key={colleague.id} style={styles.colleagueCard} activeOpacity={0.8}>
+                        <LinearGradient colors={["#FFFFFF", "#F8F9FA"]} style={styles.colleagueCardGradient}>
+                          <View style={styles.colleaguePhoto}>
+                            {colleague.photo ? (
+                              <Image source={{ uri: colleague.photo }} style={styles.colleagueImage} />
+                            ) : (
+                              <LinearGradient colors={["#F3F4F6", "#E5E7EB"]} style={styles.colleaguePlaceholder}>
+                                <UserIcon size={14} color="#9CA3AF" />
+                              </LinearGradient>
+                            )}
+                          </View>
+                          <View style={styles.colleagueInfo}>
+                            <Text style={styles.colleagueName}>{colleague.name}</Text>
+                            <Text style={styles.colleagueClubs}>
+                              {colleague.commonClubs} club{colleague.commonClubs > 1 ? "s" : ""} en commun
+                            </Text>
+                          </View>
+                          <ChevronRight size={12} color="#6B7280" />
+                        </LinearGradient>
+                      </TouchableOpacity>
+                    ))
+                  ) : (
+                    <View style={styles.emptyState}>
+                      <LinearGradient colors={["#EBF4FF", "#DBEAFE"]} style={styles.emptyStateCard}>
+                        <Users size={28} color="#3B82F6" />
+                        <Text style={styles.emptyStateTitle}>Aucun collègue pour le moment</Text>
+                        <Text style={styles.emptyStateSubtitle}>
+                          Rejoignez des clubs pour rencontrer d'autres étudiants
+                        </Text>
+                      </LinearGradient>
                     </View>
-                    <View style={styles.colleagueInfo}>
-                      <Text style={styles.colleagueName}>{colleague.name}</Text>
-                      <Text style={styles.colleagueClubs}>
-                        {colleague.commonClubs} club{colleague.commonClubs > 1 ? "s" : ""} en commun
-                      </Text>
-                    </View>
-                    <ChevronRight size={16} color={Colors.darkGray} />
-                  </TouchableOpacity>
-                ))}
-              </View>
-            ) : (
-              <View style={styles.emptyState}>
-                <Users size={48} color={Colors.lightGray} />
-                <Text style={styles.emptyStateTitle}>Aucun collègue pour le moment</Text>
-                <Text style={styles.emptyStateSubtitle}>Rejoignez des clubs pour rencontrer d'autres étudiants</Text>
-              </View>
-            )}
+                  )}
+                </LinearGradient>
+              )}
+            </View>
           </View>
         )}
 
         {activeTab === "achievements" && (
           <View>
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Vos Réalisations</Text>
-              {achievements.map((achievement) => (
-                <View
-                  key={achievement.id}
-                  style={[styles.achievementCard, achievement.earned && styles.achievementEarned]}
-                >
-                  <Text style={styles.achievementIcon}>{achievement.icon}</Text>
-                  <View style={styles.achievementInfo}>
-                    <Text style={[styles.achievementName, achievement.earned && styles.achievementNameEarned]}>
-                      {achievement.name}
-                    </Text>
-                    <Text style={styles.achievementDescription}>{achievement.description}</Text>
-                    <View style={styles.progressContainer}>
-                      <View style={styles.progressBar}>
-                        <View style={[styles.progressFill, { width: `${achievement.progress}%` }]} />
-                      </View>
-                      <Text style={styles.progressText}>{Math.round(achievement.progress)}%</Text>
+              <CollapsibleSectionHeader
+                title="Vos Réalisations"
+                count={achievements.filter((a) => a.earned).length}
+                sectionKey="achievements"
+                onAdd={() => {}}
+              />
+
+              {expandedSections.achievements && (
+                <LinearGradient colors={["#FFFFFF", "#F8F9FA"]} style={styles.sectionContent}>
+                  {achievements.map((achievement) => (
+                    <View
+                      key={achievement.id}
+                      style={[styles.achievementCard, achievement.earned && styles.achievementEarned]}
+                    >
+                      <LinearGradient
+                        colors={achievement.earned ? ["#FFFFFF", "#F8F9FA"] : ["#F3F4F6", "#E5E7EB"]}
+                        style={styles.achievementCardGradient}
+                      >
+                        <Text style={styles.achievementIcon}>{achievement.icon}</Text>
+                        <View style={styles.achievementInfo}>
+                          <Text style={[styles.achievementName, achievement.earned && styles.achievementNameEarned]}>
+                            {achievement.name}
+                          </Text>
+                          <Text style={styles.achievementDescription}>{achievement.description}</Text>
+                          <View style={styles.progressContainer}>
+                            <View style={styles.progressBar}>
+                              <LinearGradient
+                                colors={["#10B981", "#34D399"]}
+                                style={[styles.progressFill, { width: `${achievement.progress}%` }]}
+                              />
+                            </View>
+                            <Text style={styles.progressText}>{Math.round(achievement.progress)}%</Text>
+                          </View>
+                        </View>
+                        {achievement.earned && (
+                          <LinearGradient colors={["#10B981", "#34D399"]} style={styles.achievementBadge}>
+                            <Text style={styles.achievementBadgeText}>✓</Text>
+                          </LinearGradient>
+                        )}
+                      </LinearGradient>
                     </View>
-                  </View>
-                  {achievement.earned && (
-                    <View style={styles.achievementBadge}>
-                      <Text style={styles.achievementBadgeText}>✓</Text>
-                    </View>
-                  )}
-                </View>
-              ))}
+                  ))}
+                </LinearGradient>
+              )}
             </View>
           </View>
         )}
@@ -1485,36 +1627,48 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: "#F8FAFF",
   },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    padding: 32,
+  },
+  loadingCard: {
+    alignItems: "center",
+    padding: 24,
+    borderRadius: 20,
+    gap: 12,
   },
   loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: Colors.gray,
+    fontSize: 14,
+    color: "#1F2937",
+    fontWeight: "500",
   },
   loadingDataContainer: {
-    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
     padding: 16,
   },
+  loadingDataCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    borderRadius: 16,
+    gap: 8,
+  },
   loadingDataText: {
-    marginLeft: 8,
-    fontSize: 14,
-    color: Colors.gray,
+    fontSize: 12,
+    color: "#1F2937",
+    fontWeight: "500",
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.lightGray,
+    borderBottomWidth: 0.5,
+    borderBottomColor: "#E5E7EB",
   },
   profileSection: {
     flexDirection: "row",
@@ -1526,15 +1680,16 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   profileImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
   },
   placeholderPhoto: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: Colors.lightGray,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -1542,303 +1697,452 @@ const styles = StyleSheet.create({
     position: "absolute",
     bottom: 0,
     right: 0,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: Colors.primary,
+    borderRadius: 10,
+    overflow: "hidden",
+  },
+  cameraButtonGradient: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 2,
-    borderColor: Colors.white,
+    borderColor: "#FFFFFF",
   },
   profileInfo: {
     justifyContent: "center",
     flex: 1,
   },
   profileName: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "600",
-    color: Colors.textDark,
+    color: "#1F2937",
     marginBottom: 2,
   },
   profileMatricule: {
-    fontSize: 14,
-    color: Colors.textLight,
+    fontSize: 12,
+    color: "#6B7280",
     marginBottom: 2,
   },
   profileSchool: {
-    fontSize: 14,
-    color: Colors.gold,
+    fontSize: 12,
+    color: "#3B82F6",
+  },
+  editInputContainer: {
+    borderRadius: 12,
+    marginBottom: 4,
+    borderWidth: 1,
+    borderColor: "#E9ECEF",
   },
   editNameInput: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "600",
-    color: Colors.textDark,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.lightGray,
-    paddingVertical: 2,
-    marginBottom: 4,
+    color: "#1F2937",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
   editMatriculeInput: {
-    fontSize: 14,
-    color: Colors.textLight,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.lightGray,
-    paddingVertical: 2,
+    fontSize: 12,
+    color: "#6B7280",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
   headerButtons: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 6,
   },
   editButton: {
-    width: 36,
-    height: 36,
+    borderRadius: 14,
+    overflow: "hidden",
+  },
+  editButtonGradient: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
-    borderRadius: 18,
-    backgroundColor: Colors.primary,
-    marginRight: 8,
+  },
+  messageButton: {
+    borderRadius: 14,
+    overflow: "hidden",
+  },
+  messageButtonGradient: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: "center",
+    alignItems: "center",
   },
   settingsButton: {
-    width: 40,
-    height: 40,
+    borderRadius: 14,
+    overflow: "hidden",
+  },
+  settingsButtonGradient: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
-    borderRadius: 20,
-    backgroundColor: Colors.background,
   },
   tabsContainer: {
     flexDirection: "row",
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.lightGray,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderBottomWidth: 0.5,
+    borderBottomColor: "#E5E7EB",
   },
   tab: {
     flex: 1,
-    paddingVertical: 12,
-    alignItems: "center",
+    marginHorizontal: 2,
   },
-  activeTab: {
-    borderBottomWidth: 2,
-    borderBottomColor: Colors.gold,
+  tabGradient: {
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#E9ECEF",
   },
   tabText: {
-    fontSize: 16,
-    color: Colors.textLight,
+    fontSize: 11,
+    color: "#6B7280",
+    fontWeight: "500",
   },
   activeTabText: {
-    color: Colors.gold,
+    color: "#FFFFFF",
     fontWeight: "600",
   },
   content: {
     flex: 1,
   },
   section: {
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.lightGray,
+    marginHorizontal: 16,
+    marginVertical: 6,
   },
-  sectionHeader: {
+  sectionCard: {
+    borderRadius: 16,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#3B82F6",
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1F2937",
+    marginBottom: 8,
+  },
+  collapsibleHeader: {
+    borderRadius: 12,
+    overflow: "hidden",
+    marginBottom: 6,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  collapsibleHeaderGradient: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 12,
+    padding: 10,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: Colors.textDark,
+  collapsibleHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
   },
-  addButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: Colors.gold,
-    borderRadius: 8,
-  },
-  addButtonText: {
+  collapsibleHeaderTitle: {
     fontSize: 14,
-    color: Colors.white,
     fontWeight: "600",
+    color: "#FFFFFF",
+    marginLeft: 6,
+  },
+  collapsibleHeaderRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  addButtonSmall: {
+    borderRadius: 10,
+    overflow: "hidden",
+  },
+  addButtonSmallGradient: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  addButtonSmallText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "bold",
+  },
+  sectionContent: {
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#F0F0F0",
   },
   inputGroup: {
-    marginBottom: 16,
+    marginBottom: 10,
   },
   label: {
-    fontSize: 16,
+    fontSize: 12,
     fontWeight: "600",
-    color: Colors.black,
-    marginBottom: 8,
+    color: "#1F2937",
+    marginBottom: 4,
+  },
+  inputContainer: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#E9ECEF",
   },
   input: {
-    borderWidth: 1,
-    borderColor: Colors.lightGray,
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: Colors.black,
-    backgroundColor: Colors.white,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    fontSize: 14,
+    color: "#1F2937",
   },
   languagesContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
+    gap: 6,
   },
   languageChip: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Colors.background,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    marginRight: 8,
-    marginBottom: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#3B82F6",
   },
   languageText: {
-    fontSize: 14,
-    color: Colors.textDark,
-    marginRight: 4,
+    fontSize: 12,
+    color: "#1F2937",
+    marginRight: 3,
+    fontWeight: "500",
   },
   removeLanguageButton: {
-    padding: 2,
+    padding: 1,
   },
   emptyText: {
-    fontSize: 14,
-    color: Colors.textLight,
+    fontSize: 12,
+    color: "#6B7280",
     fontStyle: "italic",
+    textAlign: "center",
+    paddingVertical: 12,
   },
   projectCard: {
-    backgroundColor: Colors.white,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: Colors.textDark,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    marginBottom: 6,
+    borderRadius: 10,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 1,
+    elevation: 1,
+  },
+  projectCardGradient: {
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#F0F0F0",
+    borderRadius: 10,
   },
   projectHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 8,
+    marginBottom: 4,
   },
   projectName: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "600",
-    color: Colors.textDark,
+    color: "#1F2937",
     flex: 1,
   },
   projectStatus: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 4,
   },
   statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 8,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   projectDescription: {
-    fontSize: 14,
-    color: Colors.textLight,
-    marginBottom: 8,
+    fontSize: 12,
+    color: "#6B7280",
+    marginBottom: 4,
+    lineHeight: 16,
   },
   projectLanguages: {
     flexDirection: "row",
-    marginBottom: 8,
+    marginBottom: 4,
     flexWrap: "wrap",
+    gap: 3,
   },
   projectLanguageChip: {
-    backgroundColor: Colors.gold + "20",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-    marginRight: 6,
-    marginBottom: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 6,
   },
   projectLanguageText: {
-    fontSize: 12,
-    color: Colors.gold,
+    fontSize: 10,
+    color: "#FFFFFF",
     fontWeight: "500",
   },
   projectFooter: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
   },
   projectCollaborators: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 3,
   },
   projectLastUpdated: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 3,
   },
   projectFooterText: {
+    fontSize: 10,
+    color: "#6B7280",
+  },
+  skillCard: {
+    marginBottom: 6,
+    borderRadius: 10,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 1,
+    elevation: 1,
+  },
+  skillCardGradient: {
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#F0F0F0",
+    borderRadius: 10,
+  },
+  skillHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  skillName: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1F2937",
+    flex: 1,
+  },
+  skillLevel: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  skillLevelText: {
+    fontSize: 10,
+    color: "#FFFFFF",
+    fontWeight: "600",
+    textTransform: "capitalize",
+  },
+  skillDescription: {
     fontSize: 12,
-    color: Colors.textLight,
-    marginLeft: 4,
+    color: "#6B7280",
+    marginBottom: 3,
+    lineHeight: 16,
+  },
+  skillExperience: {
+    fontSize: 11,
+    color: "#6B7280",
+    fontStyle: "italic",
+  },
+  skillCertifications: {
+    fontSize: 11,
+    color: "#3B82F6",
+    fontWeight: "500",
   },
   toolCard: {
+    marginBottom: 6,
+    borderRadius: 10,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 1,
+    elevation: 1,
+  },
+  toolCardGradient: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Colors.white,
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 12,
-    shadowColor: Colors.textDark,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#F0F0F0",
+    borderRadius: 10,
   },
   toolIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: Colors.gold,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 12,
+    marginRight: 8,
   },
   toolInfo: {
     flex: 1,
   },
   toolName: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "600",
-    color: Colors.textDark,
-    marginBottom: 2,
+    color: "#1F2937",
+    marginBottom: 1,
   },
   toolDescription: {
-    fontSize: 14,
-    color: Colors.textLight,
+    fontSize: 12,
+    color: "#6B7280",
+    lineHeight: 16,
   },
   colleagueCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.white,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 8,
-    shadowColor: Colors.textDark,
+    marginBottom: 6,
+    borderRadius: 10,
+    overflow: "hidden",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowOpacity: 0.03,
+    shadowRadius: 1,
     elevation: 1,
   },
+  colleagueCardGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#F0F0F0",
+    borderRadius: 10,
+  },
   colleaguePhoto: {
-    marginRight: 12,
+    marginRight: 8,
   },
   colleagueImage: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#FFFFFF",
   },
   colleaguePlaceholder: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.lightGray,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -1846,154 +2150,112 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   colleagueName: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "600",
-    color: Colors.textDark,
-    marginBottom: 2,
+    color: "#1F2937",
+    marginBottom: 1,
   },
   colleagueClubs: {
-    fontSize: 14,
-    color: Colors.textLight,
+    fontSize: 12,
+    color: "#6B7280",
   },
   emptyState: {
-    flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    padding: 24,
-    minHeight: 300,
+    padding: 20,
+  },
+  emptyStateCard: {
+    alignItems: "center",
+    padding: 16,
+    borderRadius: 12,
   },
   emptyStateTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: Colors.textDark,
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptyStateSubtitle: {
     fontSize: 14,
-    color: Colors.textLight,
+    fontWeight: "600",
+    color: "#1F2937",
+    marginTop: 8,
+    marginBottom: 3,
     textAlign: "center",
   },
-  skillCard: {
-    backgroundColor: Colors.white,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: Colors.textDark,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  skillHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  skillName: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: Colors.textDark,
-    flex: 1,
-  },
-  skillLevel: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  skillLevelText: {
+  emptyStateSubtitle: {
     fontSize: 12,
-    color: Colors.white,
-    fontWeight: "600",
-    textTransform: "capitalize",
-  },
-  skillDescription: {
-    fontSize: 14,
-    color: Colors.textLight,
-    marginBottom: 4,
-  },
-  skillExperience: {
-    fontSize: 12,
-    color: Colors.textLight,
-    fontStyle: "italic",
-  },
-  skillCertifications: {
-    fontSize: 12,
-    color: Colors.gold,
-    fontWeight: "500",
+    color: "#6B7280",
+    textAlign: "center",
+    lineHeight: 16,
   },
   achievementCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: Colors.lightGray,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 8,
+    marginBottom: 6,
+    borderRadius: 10,
+    overflow: "hidden",
     opacity: 0.6,
   },
   achievementEarned: {
-    backgroundColor: Colors.white,
     opacity: 1,
-    shadowColor: Colors.textDark,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
     elevation: 2,
   },
+  achievementCardGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#F0F0F0",
+    borderRadius: 10,
+  },
   achievementIcon: {
-    fontSize: 24,
-    marginRight: 12,
+    fontSize: 16,
+    marginRight: 8,
   },
   achievementInfo: {
     flex: 1,
   },
   achievementName: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "600",
-    color: Colors.textLight,
-    marginBottom: 2,
+    color: "#6B7280",
+    marginBottom: 1,
   },
   achievementNameEarned: {
-    color: Colors.textDark,
+    color: "#1F2937",
   },
   achievementDescription: {
-    fontSize: 14,
-    color: Colors.textLight,
+    fontSize: 12,
+    color: "#6B7280",
+    marginBottom: 4,
   },
   achievementBadge: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: Colors.success,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     justifyContent: "center",
     alignItems: "center",
   },
   achievementBadgeText: {
-    fontSize: 14,
-    color: Colors.white,
+    fontSize: 12,
+    color: "#FFFFFF",
     fontWeight: "bold",
   },
   progressContainer: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 8,
+    gap: 6,
   },
   progressBar: {
     flex: 1,
-    height: 6,
-    backgroundColor: Colors.lightGray,
-    borderRadius: 3,
-    marginRight: 8,
+    height: 3,
+    backgroundColor: "#F3F4F6",
+    borderRadius: 1.5,
   },
   progressFill: {
     height: "100%",
-    backgroundColor: Colors.success,
-    borderRadius: 3,
+    borderRadius: 1.5,
   },
   progressText: {
-    fontSize: 12,
-    color: Colors.textLight,
-    minWidth: 35,
+    fontSize: 10,
+    color: "#6B7280",
+    minWidth: 25,
   },
 })

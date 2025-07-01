@@ -12,12 +12,11 @@ import {
   Alert,
   Share as RNShare,
   Modal,
-  Pressable,
   Dimensions,
 } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
+import { LinearGradient } from "expo-linear-gradient"
 import { BookOpen, Search, Filter, Star, Share2, MessageSquare, Eye, Moon, Sun } from "lucide-react-native"
-import Colors from "@/constants/Colors"
 import { StatusBar } from "expo-status-bar"
 import { supabase } from "@/lib/supabase"
 import { useNavigation } from "expo-router"
@@ -56,6 +55,7 @@ interface Book {
 // Options de tri
 type SortField = "popularity" | "date" | "rating"
 type SortOrder = "ascending" | "descending"
+
 interface SortOption {
   field: SortField
   order: SortOrder
@@ -77,6 +77,7 @@ export default function LibraryScreen() {
   const [sortOption, setSortOption] = useState<SortOption>({ field: "date", order: "descending" })
   const [minRating, setMinRating] = useState<number | null>(null)
   const [nightMode, setNightMode] = useState(false)
+
   const navigation = useNavigation<NavigationProp>()
 
   useEffect(() => {
@@ -86,16 +87,18 @@ export default function LibraryScreen() {
           .from("livres")
           .select("id, titre, domaine, couverture_url, document_url, popularite, created_at, auteur")
 
+        // Modifier la partie de tri pour éviter l'erreur avec average_rating
         query = query.order(
           sortOption.field === "popularity"
             ? "popularite"
             : sortOption.field === "rating"
-              ? "average_rating"
+              ? "created_at" // Utiliser created_at au lieu de average_rating si la table ratings n'existe pas
               : "created_at",
           { ascending: sortOption.order === "ascending" },
         )
 
         const { data, error } = await query
+
         if (error) {
           console.error("Erreur récupération livres:", error.message)
           return
@@ -103,20 +106,36 @@ export default function LibraryScreen() {
 
         console.log("Données brutes depuis Supabase:", data)
 
-        const { data: ratingsData, error: ratingsError } = await supabase
-          .from("ratings")
-          .select("book_id, rating")
-          .in(
-            "book_id",
-            data.map((book) => book.id),
-          )
+        // Tentative de récupération des ratings (optionnel si la table n'existe pas)
+        let ratingsData: any[] = []
+        try {
+          const { data: ratingsResult, error: ratingsError } = await supabase
+            .from("ratings")
+            .select("book_id, rating")
+            .in(
+              "book_id",
+              data.map((book) => book.id),
+            )
 
-        if (ratingsError) {
-          console.error("Erreur récupération notes:", ratingsError.message)
+          if (ratingsError) {
+            // Si la table n'existe pas, on continue sans les ratings
+            if (ratingsError.code === "42P01" || ratingsError.message.includes("does not exist")) {
+              console.log("ℹ️ Table 'ratings' non trouvée - continuons sans les notes")
+              ratingsData = []
+            } else {
+              console.error("Erreur récupération notes:", ratingsError.message)
+              ratingsData = []
+            }
+          } else {
+            ratingsData = ratingsResult || []
+          }
+        } catch (error) {
+          console.log("ℹ️ Impossible de récupérer les ratings - continuons sans les notes")
+          ratingsData = []
         }
 
         const ratingsMap = new Map<string, number[]>()
-        ratingsData?.forEach(({ book_id, rating }) => {
+        ratingsData.forEach(({ book_id, rating }) => {
           if (!ratingsMap.has(book_id)) ratingsMap.set(book_id, [])
           ratingsMap.get(book_id)!.push(rating)
         })
@@ -125,7 +144,10 @@ export default function LibraryScreen() {
           const ratings = ratingsMap.get(book.id) || []
           const averageRating =
             ratings.length > 0 ? ratings.reduce((sum: number, r: number) => sum + r, 0) / ratings.length : undefined
-          const category = book.domaine?.toLowerCase() || "all"
+
+          // Normaliser la catégorie pour éviter les doublons
+          const category = book.domaine ? book.domaine.toLowerCase().trim() : "all"
+
           return {
             id: book.id,
             title: book.titre || "Sans titre",
@@ -139,12 +161,15 @@ export default function LibraryScreen() {
           }
         })
 
+        // Créer une liste de catégories uniques
         const uniqueCategories = Array.from(new Set(booksWithRatings.map((book) => book.category)))
           .filter((category) => category !== "all")
           .map((category) => ({
             id: category,
-            name: category.charAt(0).toUpperCase() + category.slice(1),
+            name: category.charAt(0).toUpperCase() + category.slice(1), // Capitalisation pour l'affichage
           }))
+
+        console.log("Catégories générées:", uniqueCategories)
 
         setCategories([{ id: "all", name: "Tous les domaines" }, ...uniqueCategories])
 
@@ -159,6 +184,7 @@ export default function LibraryScreen() {
         }
       }
     }
+
     fetchBooks()
   }, [sortOption, minRating])
 
@@ -184,6 +210,7 @@ export default function LibraryScreen() {
       Alert.alert("Validation", "Veuillez entrer un commentaire.")
       return
     }
+
     setModalVisible(false)
     try {
       const { error } = await supabase.from("reviews").insert([
@@ -194,6 +221,7 @@ export default function LibraryScreen() {
           created_at: new Date().toISOString(),
         },
       ])
+
       if (error) {
         Alert.alert("Erreur", "Une erreur s'est produite lors de l'envoi de votre commentaire.")
       } else {
@@ -211,10 +239,12 @@ export default function LibraryScreen() {
       const result = await RNShare.share({
         message: `Découvrez ce livre : "${book.title}" par ${book.author} !`,
       })
+
       if (result.action === RNShare.sharedAction) {
         const { error } = await supabase
           .from("shares")
           .insert([{ book_id: book.id, book_title: book.title, shared_at: new Date().toISOString() }])
+
         if (error) {
           console.log("Erreur enregistrement partage:", error.message)
         }
@@ -228,10 +258,12 @@ export default function LibraryScreen() {
 
   const openPDF = async (book: Book) => {
     let pdfUrl = book.documentUrl
+
     if (!pdfUrl) {
       Alert.alert("Erreur", "Aucun document disponible pour ce livre.")
       return
     }
+
     try {
       const response = await fetch(pdfUrl)
       if (!response.ok) {
@@ -239,10 +271,16 @@ export default function LibraryScreen() {
         if (!fileName) {
           throw new Error("Nom de fichier invalide")
         }
-        const { data, error } = await supabase.storage.from("book-documents").createSignedUrl(fileName, 31536000)
+
+        const { data, error } = await supabase.storage
+          .from("bookFilterModalVisible-documents")
+          .createSignedUrl(fileName, 31536000)
+
         if (error) throw error
+
         pdfUrl = data.signedUrl
       }
+
       navigation.navigate("PDFViewerScreen", { pdfUrl, title: book.title })
     } catch (error: unknown) {
       if (error instanceof Error) {
@@ -253,9 +291,11 @@ export default function LibraryScreen() {
 
   const handleAIHelp = async (book: Book) => {
     try {
-      const apiKey = process.env.GEMINI_API_KEY || "VOTRE_CLE_API_GEMINI"
+      const apiKey = process.env.GEMINI_API_KEY || "AIzaSyBOx6RTLImCCg4lGTVu0xF0oCqu-K-CJ0M"
       const url = `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${apiKey}`
+
       console.log("Appel API à:", url)
+
       const response = await fetch(url, {
         method: "POST",
         headers: {
@@ -282,8 +322,10 @@ export default function LibraryScreen() {
         const errorText = await response.text()
         throw new Error(`Erreur API: ${response.status} - ${errorText}`)
       }
+
       const data = await response.json()
       const aiResponse = data.candidates?.[0]?.content?.parts?.[0]?.text || "Aucune réponse disponible."
+
       Alert.alert("AI Help", aiResponse)
     } catch (error) {
       console.error("Erreur AI Help:", error)
@@ -303,24 +345,36 @@ export default function LibraryScreen() {
         nightMode && styles.categoryChipNight,
       ]}
       onPress={() => setSelectedCategory(item.id)}
+      activeOpacity={0.8}
     >
-      <Text
-        style={[
-          styles.categoryText,
-          selectedCategory === item.id && styles.selectedCategoryText,
-          nightMode && styles.categoryTextNight,
-        ]}
+      <LinearGradient
+        colors={
+          selectedCategory === item.id
+            ? ["#3B82F6", "#60A5FA"]
+            : nightMode
+              ? ["#2a2a2a", "#404040"]
+              : ["#f8f9fa", "#ffffff"]
+        }
+        style={styles.categoryGradient}
       >
-        {item.name}
-      </Text>
+        <Text
+          style={[
+            styles.categoryText,
+            selectedCategory === item.id && styles.selectedCategoryText,
+            nightMode && styles.categoryTextNight,
+          ]}
+        >
+          {item.name}
+        </Text>
+      </LinearGradient>
     </TouchableOpacity>
   )
 
   const renderPopularBookItem = ({ item }: { item: Book }) => (
     <TouchableOpacity style={[styles.popularBookCard, nightMode && styles.popularBookCardNight]} activeOpacity={0.8}>
-      <View style={[styles.popularBookCover, nightMode && styles.popularBookCoverNight]}>
-        <BookOpen size={isSmallScreen ? 20 : 24} color={nightMode ? "#121212" : "#fff"} />
-      </View>
+      <LinearGradient colors={["#3B82F6", "#60A5FA", "#93C5FD"]} style={styles.popularBookCover}>
+        <BookOpen size={16} color="#FFFFFF" />
+      </LinearGradient>
       <Text style={[styles.popularBookTitle, nightMode && styles.popularBookTitleNight]} numberOfLines={2}>
         {item.title}
       </Text>
@@ -330,76 +384,84 @@ export default function LibraryScreen() {
 
   const renderBookItem = ({ item }: { item: Book }) => (
     <TouchableOpacity style={[styles.bookCard, nightMode && styles.bookCardNight]} activeOpacity={0.8}>
-      <View style={styles.bookCoverContainer}>
-        <Image source={{ uri: item.coverUrl }} style={styles.bookCover} />
-        {item.isNew && (
-          <View style={[styles.newBadge, nightMode && styles.newBadgeNight]}>
-            <Text style={styles.newBadgeText}>NOUVEAU</Text>
-          </View>
-        )}
-      </View>
-      <View style={styles.bookInfo}>
-        <View style={styles.bookHeader}>
-          <View style={styles.bookTitleContainer}>
-            <Text style={[styles.bookTitle, nightMode && styles.bookTitleNight]} numberOfLines={2}>
-              {item.title}
+      <LinearGradient
+        colors={nightMode ? ["#1e1e1e", "#2a2a2a"] : ["#ffffff", "#f8f9fa"]}
+        style={styles.bookCardGradient}
+      >
+        <View style={styles.bookCoverContainer}>
+          <Image source={{ uri: item.coverUrl }} style={styles.bookCover} />
+          {item.isNew && (
+            <LinearGradient colors={["#10B981", "#34D399"]} style={styles.newBadge}>
+              <Text style={styles.newBadgeText}>NEW</Text>
+            </LinearGradient>
+          )}
+        </View>
+
+        <View style={styles.bookInfo}>
+          <View style={styles.bookHeader}>
+            <View style={styles.bookTitleContainer}>
+              <Text style={[styles.bookTitle, nightMode && styles.bookTitleNight]} numberOfLines={2}>
+                {item.title}
+              </Text>
+              {item.popularity > 1000 && (
+                <LinearGradient colors={["#F59E0B", "#FBBF24"]} style={styles.popularBadge}>
+                  <Text style={styles.badgeText}>HOT</Text>
+                </LinearGradient>
+              )}
+            </View>
+
+            <Text style={[styles.bookAuthor, nightMode && styles.bookAuthorNight]} numberOfLines={1}>
+              {item.author}
             </Text>
-            {item.popularity > 1000 && (
-              <View style={[styles.badge, styles.popularBadge, nightMode && styles.popularBadgeNight]}>
-                <Text style={styles.badgeText}>POPULAIRE</Text>
-              </View>
-            )}
+            <Text style={[styles.bookCategory, nightMode && styles.bookCategoryNight]}>{item.category}</Text>
+
+            <View style={styles.bookStats}>
+              {item.averageRating && (
+                <>
+                  <Star size={10} color="#FFD700" fill="#FFD700" />
+                  <Text style={[styles.bookStatText, nightMode && styles.bookStatTextNight]}>
+                    {item.averageRating.toFixed(1)}
+                  </Text>
+                </>
+              )}
+              <Eye size={10} color={nightMode ? "#aaa" : "#999"} style={styles.statIcon} />
+              <Text style={[styles.bookStatText, nightMode && styles.bookStatTextNight]}>{item.popularity}</Text>
+            </View>
           </View>
-          <Text style={[styles.bookAuthor, nightMode && styles.bookAuthorNight]} numberOfLines={1}>
-            {item.author}
-          </Text>
-          <Text style={[styles.bookCategory, nightMode && styles.bookCategoryNight]}>{item.category}</Text>
-          <View style={styles.bookStats}>
-            {item.averageRating && (
-              <>
-                <Star
-                  size={12}
-                  color={nightMode ? "#FFD700" : Colors.light.gold}
-                  fill={nightMode ? "#FFD700" : Colors.light.gold}
-                />
-                <Text style={[styles.bookStatText, nightMode && styles.bookStatTextNight]}>
-                  {item.averageRating.toFixed(1)}
-                </Text>
-              </>
-            )}
-            <Eye size={12} color={nightMode ? "#aaa" : "#999"} style={styles.statIcon} />
-            <Text style={[styles.bookStatText, nightMode && styles.bookStatTextNight]}>{item.popularity}</Text>
-          </View>
-        </View>
-        <View style={styles.bookActions}>
-          <TouchableOpacity
-            style={[styles.primaryButton, nightMode && styles.primaryButtonNight]}
-            onPress={() => openPDF(item)}
-          >
-            <Text style={[styles.primaryButtonText, nightMode && styles.primaryButtonTextNight]}>OUVRIR</Text>
-          </TouchableOpacity>
-          <View style={styles.secondaryActions}>
-            <TouchableOpacity
-              style={[styles.iconButton, nightMode && styles.iconButtonNight]}
-              onPress={() => openReviewModal(item)}
-            >
-              <MessageSquare size={16} color={nightMode ? "#FFD700" : Colors.light.gold} />
+
+          <View style={styles.bookActions}>
+            <TouchableOpacity onPress={() => openPDF(item)} activeOpacity={0.8}>
+              <LinearGradient colors={["#3B82F6", "#60A5FA"]} style={styles.primaryButton}>
+                <Text style={styles.primaryButtonText}>OUVRIR</Text>
+              </LinearGradient>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.iconButton, nightMode && styles.iconButtonNight]}
-              onPress={() => handleShare(item)}
-            >
-              <Share2 size={16} color={nightMode ? "#FFD700" : Colors.light.gold} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.aiButton, nightMode && styles.aiButtonNight]}
-              onPress={() => handleAIHelp(item)}
-            >
-              <Text style={[styles.aiButtonText, nightMode && styles.aiButtonTextNight]}>AI</Text>
-            </TouchableOpacity>
+
+            <View style={styles.secondaryActions}>
+              <TouchableOpacity
+                style={[styles.iconButton, nightMode && styles.iconButtonNight]}
+                onPress={() => openReviewModal(item)}
+                activeOpacity={0.8}
+              >
+                <MessageSquare size={12} color={nightMode ? "#FFD700" : "#3B82F6"} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.iconButton, nightMode && styles.iconButtonNight]}
+                onPress={() => handleShare(item)}
+                activeOpacity={0.8}
+              >
+                <Share2 size={12} color={nightMode ? "#FFD700" : "#3B82F6"} />
+              </TouchableOpacity>
+
+              <TouchableOpacity onPress={() => handleAIHelp(item)} activeOpacity={0.8}>
+                <LinearGradient colors={["#8B5CF6", "#A78BFA"]} style={styles.aiButton}>
+                  <Text style={styles.aiButtonText}>AI</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
-      </View>
+      </LinearGradient>
     </TouchableOpacity>
   )
 
@@ -408,30 +470,38 @@ export default function LibraryScreen() {
       <StatusBar style={nightMode ? "light" : "auto"} />
 
       {/* Header */}
-      <View style={styles.header}>
-        <Text style={[styles.headerTitle, nightMode && styles.headerTitleNight]}>Bibliothèque</Text>
-        <TouchableOpacity onPress={() => setNightMode(!nightMode)} style={styles.nightModeButton}>
-          {nightMode ? <Sun size={24} color="#FFD700" /> : <Moon size={24} color="#000" />}
+      <LinearGradient colors={nightMode ? ["#1e1e1e", "#2a2a2a"] : ["#ffffff", "#f8f9fa"]} style={styles.header}>
+        <Text style={[styles.headerTitle, nightMode && styles.headerTitleNight]}>📚 Bibliothèque</Text>
+        <TouchableOpacity onPress={() => setNightMode(!nightMode)} style={styles.nightModeButton} activeOpacity={0.8}>
+          <LinearGradient
+            colors={nightMode ? ["#FFD700", "#FFA500"] : ["#1e1e1e", "#2a2a2a"]}
+            style={styles.nightModeGradient}
+          >
+            {nightMode ? <Sun size={18} color="#121212" /> : <Moon size={18} color="#FFFFFF" />}
+          </LinearGradient>
         </TouchableOpacity>
-      </View>
+      </LinearGradient>
 
       {/* Search Header */}
       <View style={[styles.searchHeader, nightMode && styles.searchHeaderNight]}>
-        <View style={[styles.searchContainer, nightMode && styles.searchContainerNight]}>
-          <Search size={20} color={nightMode ? "#aaa" : Colors.light.darkGray} style={styles.searchIcon} />
+        <LinearGradient
+          colors={nightMode ? ["#2a2a2a", "#404040"] : ["#f8f9fa", "#ffffff"]}
+          style={styles.searchContainer}
+        >
+          <Search size={16} color={nightMode ? "#aaa" : "#666"} style={styles.searchIcon} />
           <TextInput
             style={[styles.searchInput, nightMode && styles.searchInputNight]}
             placeholder="Rechercher un livre..."
-            placeholderTextColor={nightMode ? "#aaa" : Colors.light.darkGray}
+            placeholderTextColor={nightMode ? "#aaa" : "#666"}
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
-        </View>
-        <TouchableOpacity
-          style={[styles.filterButton, nightMode && styles.filterButtonNight]}
-          onPress={() => setFilterModalVisible(true)}
-        >
-          <Filter size={20} color={nightMode ? "#FFD700" : Colors.light.gold} />
+        </LinearGradient>
+
+        <TouchableOpacity style={styles.filterButton} onPress={() => setFilterModalVisible(true)} activeOpacity={0.8}>
+          <LinearGradient colors={["#3B82F6", "#60A5FA"]} style={styles.filterGradient}>
+            <Filter size={16} color="#FFFFFF" />
+          </LinearGradient>
         </TouchableOpacity>
       </View>
 
@@ -448,10 +518,13 @@ export default function LibraryScreen() {
       </View>
 
       {/* Popular Section */}
-      <View style={[styles.popularSection, nightMode && styles.popularSectionNight]}>
+      <LinearGradient
+        colors={nightMode ? ["#1e1e1e", "#2a2a2a"] : ["#EBF4FF", "#DBEAFE"]}
+        style={styles.popularSection}
+      >
         <View style={styles.sectionHeader}>
-          <Star size={20} color={nightMode ? "#FFD700" : Colors.light.gold} />
-          <Text style={[styles.sectionTitle, nightMode && styles.sectionTitleNight]}>Les plus populaires</Text>
+          <Star size={16} color="#FFD700" fill="#FFD700" />
+          <Text style={[styles.sectionTitle, nightMode && styles.sectionTitleNight]}>🔥 Populaires</Text>
         </View>
         <FlatList
           data={popularBooks}
@@ -461,7 +534,7 @@ export default function LibraryScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.popularBooksList}
         />
-      </View>
+      </LinearGradient>
 
       {/* Books List */}
       <FlatList
@@ -483,34 +556,32 @@ export default function LibraryScreen() {
         onRequestClose={() => setModalVisible(false)}
       >
         <View style={[styles.modalOverlay, nightMode && styles.modalOverlayNight]}>
-          <View style={[styles.modalView, nightMode && styles.modalViewNight]}>
+          <LinearGradient colors={nightMode ? ["#1e1e1e", "#2a2a2a"] : ["#ffffff", "#f8f9fa"]} style={styles.modalView}>
             <Text style={[styles.modalTitle, nightMode && styles.modalTitleNight]}>
-              Commenter "{currentBook?.title || ""}"
+              💬 Commenter "{currentBook?.title || ""}"
             </Text>
             <TextInput
               style={[styles.modalInput, nightMode && styles.modalInputNight]}
               multiline
               placeholder="Écrivez votre commentaire ici..."
-              placeholderTextColor={nightMode ? "#aaa" : "#333"}
+              placeholderTextColor={nightMode ? "#aaa" : "#666"}
               value={reviewText}
               onChangeText={setReviewText}
               autoFocus
             />
             <View style={styles.modalButtons}>
-              <Pressable
-                style={[styles.modalButton, styles.cancelButton, nightMode && styles.cancelButtonNight]}
-                onPress={() => setModalVisible(false)}
-              >
-                <Text style={[styles.modalButtonText, nightMode && styles.modalButtonTextNight]}>Annuler</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.modalButton, styles.submitButton, nightMode && styles.submitButtonNight]}
-                onPress={submitReview}
-              >
-                <Text style={[styles.modalButtonText, nightMode && styles.modalButtonTextNight]}>Envoyer</Text>
-              </Pressable>
+              <TouchableOpacity onPress={() => setModalVisible(false)} activeOpacity={0.8}>
+                <LinearGradient colors={["#6B7280", "#9CA3AF"]} style={styles.cancelButton}>
+                  <Text style={styles.modalButtonText}>Annuler</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={submitReview} activeOpacity={0.8}>
+                <LinearGradient colors={["#10B981", "#34D399"]} style={styles.submitButton}>
+                  <Text style={styles.modalButtonText}>Envoyer</Text>
+                </LinearGradient>
+              </TouchableOpacity>
             </View>
-          </View>
+          </LinearGradient>
         </View>
       </Modal>
 
@@ -522,10 +593,11 @@ export default function LibraryScreen() {
         onRequestClose={() => setFilterModalVisible(false)}
       >
         <View style={[styles.modalOverlay, nightMode && styles.modalOverlayNight]}>
-          <View style={[styles.modalView, nightMode && styles.modalViewNight]}>
-            <Text style={[styles.modalTitle, nightMode && styles.modalTitleNight]}>Trier par</Text>
+          <LinearGradient colors={nightMode ? ["#1e1e1e", "#2a2a2a"] : ["#ffffff", "#f8f9fa"]} style={styles.modalView}>
+            <Text style={[styles.modalTitle, nightMode && styles.modalTitleNight]}>⚙️ Filtres</Text>
+
             <View style={styles.filterSection}>
-              <Text style={[styles.filterSectionTitle, nightMode && styles.filterSectionTitleNight]}>Champ</Text>
+              <Text style={[styles.filterSectionTitle, nightMode && styles.filterSectionTitleNight]}>Trier par</Text>
               {["popularity", "date", "rating"].map((field) => (
                 <TouchableOpacity
                   key={field}
@@ -535,13 +607,15 @@ export default function LibraryScreen() {
                     nightMode && styles.filterOptionNight,
                   ]}
                   onPress={() => setSortOption({ ...sortOption, field: field as SortField })}
+                  activeOpacity={0.8}
                 >
                   <Text style={[styles.filterOptionText, nightMode && styles.filterOptionTextNight]}>
-                    {field === "popularity" ? "Popularité" : field === "date" ? "Date" : "Note"}
+                    {field === "popularity" ? "📈 Popularité" : field === "date" ? "📅 Date" : "⭐ Note"}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
+
             <View style={styles.filterSection}>
               <Text style={[styles.filterSectionTitle, nightMode && styles.filterSectionTitleNight]}>Ordre</Text>
               {["descending", "ascending"].map((order) => (
@@ -553,40 +627,21 @@ export default function LibraryScreen() {
                     nightMode && styles.filterOptionNight,
                   ]}
                   onPress={() => setSortOption({ ...sortOption, order: order as SortOrder })}
+                  activeOpacity={0.8}
                 >
                   <Text style={[styles.filterOptionText, nightMode && styles.filterOptionTextNight]}>
-                    {order === "descending" ? "Décroissant" : "Croissant"}
+                    {order === "descending" ? "⬇️ Décroissant" : "⬆️ Croissant"}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
-            <View style={styles.filterSection}>
-              <Text style={[styles.filterSectionTitle, nightMode && styles.filterSectionTitleNight]}>
-                Note minimale
-              </Text>
-              {[null, 3, 4].map((rating) => (
-                <TouchableOpacity
-                  key={rating?.toString() || "none"}
-                  style={[
-                    styles.filterOption,
-                    minRating === rating && styles.selectedFilterOption,
-                    nightMode && styles.filterOptionNight,
-                  ]}
-                  onPress={() => setMinRating(rating)}
-                >
-                  <Text style={[styles.filterOptionText, nightMode && styles.filterOptionTextNight]}>
-                    {rating === null ? "Aucune" : `${rating}+ étoiles`}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            <Pressable
-              style={[styles.modalButton, styles.cancelButton, nightMode && styles.cancelButtonNight]}
-              onPress={() => setFilterModalVisible(false)}
-            >
-              <Text style={[styles.modalButtonText, nightMode && styles.modalButtonTextNight]}>Appliquer</Text>
-            </Pressable>
-          </View>
+
+            <TouchableOpacity onPress={() => setFilterModalVisible(false)} activeOpacity={0.8}>
+              <LinearGradient colors={["#3B82F6", "#60A5FA"]} style={styles.applyButton}>
+                <Text style={styles.modalButtonText}>Appliquer</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </LinearGradient>
         </View>
       </Modal>
     </SafeAreaView>
@@ -596,7 +651,7 @@ export default function LibraryScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#fff",
+    backgroundColor: "#F8FAFF",
   },
   containerNight: {
     backgroundColor: "#121212",
@@ -605,213 +660,206 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f0f0f0",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 0.5,
+    borderBottomColor: "#E5E7EB",
   },
   headerTitle: {
-    fontSize: isSmallScreen ? 22 : 26,
-    fontWeight: "bold",
-    color: "#000",
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#1F2937",
   },
   headerTitleNight: {
-    color: "#fff",
+    color: "#FFFFFF",
   },
   nightModeButton: {
-    padding: 8,
-    borderRadius: 20,
+    borderRadius: 16,
+    overflow: "hidden",
+  },
+  nightModeGradient: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
   },
   searchHeader: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: "#fff",
-    borderBottomWidth: 1,
-    borderBottomColor: "#f0f0f0",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: "#FFFFFF",
+    borderBottomWidth: 0.5,
+    borderBottomColor: "#E5E7EB",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
   searchHeaderNight: {
     backgroundColor: "#1e1e1e",
     borderBottomColor: "#333",
   },
   searchContainer: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#f8f9fa",
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginBottom: 12,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderWidth: 1,
-    borderColor: "#e9ecef",
-  },
-  searchContainerNight: {
-    backgroundColor: "#2a2a2a",
-    borderColor: "#404040",
+    borderColor: "#E9ECEF",
   },
   searchInput: {
     flex: 1,
-    marginLeft: 12,
-    color: "#333",
-    fontSize: 16,
+    marginLeft: 8,
+    color: "#1F2937",
+    fontSize: 14,
   },
   searchInputNight: {
-    color: "#fff",
+    color: "#FFFFFF",
   },
   searchIcon: {
     opacity: 0.6,
   },
   filterButton: {
-    alignSelf: "flex-start",
-    borderWidth: 1,
-    borderColor: Colors.light.gold,
-    borderRadius: 10,
-    padding: 10,
-    backgroundColor: "rgba(255, 193, 7, 0.1)",
+    borderRadius: 16,
+    overflow: "hidden",
   },
-  filterButtonNight: {
-    borderColor: "#FFD700",
-    backgroundColor: "rgba(255, 215, 0, 0.1)",
+  filterGradient: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
   },
   categoriesContainer: {
-    paddingVertical: 16,
+    paddingVertical: 12,
   },
   categoriesList: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
   },
   categoryChip: {
-    backgroundColor: "#f8f9fa",
-    borderRadius: 20,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    marginRight: 12,
-    borderWidth: 1,
-    borderColor: "#e9ecef",
+    marginRight: 8,
+    borderRadius: 16,
+    overflow: "hidden",
   },
-  categoryChipNight: {
-    backgroundColor: "#2a2a2a",
-    borderColor: "#404040",
-  },
-  selectedCategoryChip: {
-    backgroundColor: Colors.light.gold,
-    borderColor: Colors.light.gold,
+  categoryChipNight: {},
+  selectedCategoryChip: {},
+  categoryGradient: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 16,
   },
   categoryText: {
-    color: "#495057",
-    fontSize: 14,
+    color: "#6B7280",
+    fontSize: 12,
     fontWeight: "500",
   },
   categoryTextNight: {
-    color: "#fff",
+    color: "#FFFFFF",
   },
   selectedCategoryText: {
-    color: "#fff",
+    color: "#FFFFFF",
     fontWeight: "600",
   },
   popularSection: {
-    marginHorizontal: 20,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: "#fef3c7",
-    borderRadius: 16,
-    padding: 16,
-    backgroundColor: "#fffbeb",
-  },
-  popularSectionNight: {
-    backgroundColor: "#1e1e1e",
-    borderColor: "#333",
-  },
-  sectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
+    marginHorizontal: 16,
     marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#111",
-    marginLeft: 8,
-  },
-  sectionTitleNight: {
-    color: "#fff",
-  },
-  popularBooksList: {
-    paddingVertical: 4,
-  },
-  popularBookCard: {
-    width: width * 0.28,
-    alignItems: "center",
-    marginRight: 16,
-    backgroundColor: "#fff",
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 12,
-    shadowColor: "#000",
+    shadowColor: "#3B82F6",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
   },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1F2937",
+    marginLeft: 6,
+  },
+  sectionTitleNight: {
+    color: "#FFFFFF",
+  },
+  popularBooksList: {
+    paddingVertical: 2,
+  },
+  popularBookCard: {
+    width: width * 0.24,
+    alignItems: "center",
+    marginRight: 12,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    padding: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
   popularBookCardNight: {
     backgroundColor: "#2a2a2a",
   },
   popularBookCover: {
-    width: width * 0.2,
-    height: width * 0.28,
-    backgroundColor: Colors.light.gold,
-    borderRadius: 10,
+    width: width * 0.16,
+    height: width * 0.22,
+    borderRadius: 8,
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 8,
-  },
-  popularBookCoverNight: {
-    backgroundColor: "#FFD700",
+    marginBottom: 6,
   },
   popularBookTitle: {
-    fontSize: isSmallScreen ? 12 : 14,
+    fontSize: 10,
     fontWeight: "600",
-    color: "#111",
+    color: "#1F2937",
     textAlign: "center",
-    lineHeight: 18,
+    lineHeight: 14,
   },
   popularBookTitleNight: {
-    color: "#fff",
+    color: "#FFFFFF",
   },
   popularBookViews: {
-    fontSize: 11,
-    color: "#666",
-    marginTop: 4,
+    fontSize: 9,
+    color: "#6B7280",
+    marginTop: 2,
   },
   popularBookViewsNight: {
-    color: "#aaa",
+    color: "#9CA3AF",
   },
   booksList: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
   },
   bookCard: {
-    flexDirection: "row",
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#f0f0f0",
+    marginBottom: 12,
     borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
+    overflow: "hidden",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  bookCardNight: {
-    backgroundColor: "#1e1e1e",
-    borderColor: "#333",
+  bookCardNight: {},
+  bookCardGradient: {
+    flexDirection: "row",
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#F0F0F0",
+    borderRadius: 16,
   },
   bookCoverContainer: {
-    width: width * 0.22,
-    height: width * 0.3,
-    borderRadius: 12,
+    width: width * 0.18,
+    height: width * 0.25,
+    borderRadius: 10,
     overflow: "hidden",
-    marginRight: 16,
-    backgroundColor: "#f8f9fa",
+    marginRight: 12,
+    backgroundColor: "#F8F9FA",
   },
   bookCover: {
     width: "100%",
@@ -820,19 +868,15 @@ const styles = StyleSheet.create({
   },
   newBadge: {
     position: "absolute",
-    top: 6,
-    right: 6,
-    backgroundColor: "#22c55e",
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  newBadgeNight: {
-    backgroundColor: "#4CAF50",
+    top: 4,
+    right: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
   newBadgeText: {
-    color: "#fff",
-    fontSize: 9,
+    color: "#FFFFFF",
+    fontSize: 8,
     fontWeight: "bold",
   },
   bookInfo: {
@@ -845,68 +889,62 @@ const styles = StyleSheet.create({
   bookTitleContainer: {
     flexDirection: "row",
     alignItems: "flex-start",
-    marginBottom: 6,
+    marginBottom: 4,
   },
   bookTitle: {
-    fontSize: isSmallScreen ? 15 : 17,
+    fontSize: 13,
     fontWeight: "600",
-    color: "#111",
+    color: "#1F2937",
     flex: 1,
-    lineHeight: 22,
+    lineHeight: 18,
   },
   bookTitleNight: {
-    color: "#fff",
-  },
-  badge: {
-    borderRadius: 6,
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-    marginLeft: 8,
+    color: "#FFFFFF",
   },
   popularBadge: {
-    backgroundColor: Colors.light.gold,
-  },
-  popularBadgeNight: {
-    backgroundColor: "#FFD700",
+    borderRadius: 4,
+    paddingVertical: 2,
+    paddingHorizontal: 4,
+    marginLeft: 6,
   },
   badgeText: {
-    color: "#fff",
-    fontSize: 9,
+    color: "#FFFFFF",
+    fontSize: 8,
     fontWeight: "bold",
   },
   bookAuthor: {
-    fontSize: 14,
-    color: "#666",
-    marginBottom: 4,
+    fontSize: 11,
+    color: "#6B7280",
+    marginBottom: 3,
   },
   bookAuthorNight: {
-    color: "#aaa",
+    color: "#9CA3AF",
   },
   bookCategory: {
-    fontSize: 13,
-    color: Colors.light.gold,
+    fontSize: 10,
+    color: "#3B82F6",
     fontWeight: "500",
-    marginBottom: 8,
+    marginBottom: 6,
     textTransform: "capitalize",
   },
   bookCategoryNight: {
-    color: "#FFD700",
+    color: "#60A5FA",
   },
   bookStats: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: 8,
   },
   bookStatText: {
-    fontSize: 12,
-    color: "#666",
-    marginLeft: 4,
+    fontSize: 10,
+    color: "#6B7280",
+    marginLeft: 3,
   },
   bookStatTextNight: {
-    color: "#aaa",
+    color: "#9CA3AF",
   },
   statIcon: {
-    marginLeft: 12,
+    marginLeft: 8,
   },
   bookActions: {
     flexDirection: "row",
@@ -914,70 +952,54 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   primaryButton: {
-    backgroundColor: Colors.light.gold,
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
     flex: 1,
-    marginRight: 12,
-  },
-  primaryButtonNight: {
-    backgroundColor: "#FFD700",
+    marginRight: 8,
   },
   primaryButtonText: {
-    color: "#fff",
+    color: "#FFFFFF",
     fontWeight: "bold",
-    fontSize: 14,
+    fontSize: 11,
     textAlign: "center",
-  },
-  primaryButtonTextNight: {
-    color: "#121212",
   },
   secondaryActions: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 4,
   },
   iconButton: {
     borderWidth: 1,
-    borderColor: Colors.light.gold,
-    borderRadius: 8,
-    padding: 8,
-    marginLeft: 6,
+    borderColor: "#3B82F6",
+    borderRadius: 6,
+    padding: 4,
   },
   iconButtonNight: {
     borderColor: "#FFD700",
   },
   aiButton: {
-    backgroundColor: Colors.light.gold,
-    borderRadius: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    marginLeft: 6,
-  },
-  aiButtonNight: {
-    backgroundColor: "#FFD700",
+    borderRadius: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 6,
   },
   aiButtonText: {
-    color: "#fff",
-    fontSize: 12,
+    color: "#FFFFFF",
+    fontSize: 10,
     fontWeight: "bold",
-  },
-  aiButtonTextNight: {
-    color: "#121212",
   },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "center",
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
   },
   modalOverlayNight: {
     backgroundColor: "rgba(0,0,0,0.7)",
   },
   modalView: {
-    backgroundColor: "#fff",
     borderRadius: 20,
-    padding: 24,
+    padding: 20,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
@@ -985,113 +1007,109 @@ const styles = StyleSheet.create({
     elevation: 10,
     maxHeight: height * 0.8,
   },
-  modalViewNight: {
-    backgroundColor: "#1e1e1e",
-  },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "bold",
-    marginBottom: 16,
-    color: "#111",
+    marginBottom: 12,
+    color: "#1F2937",
     textAlign: "center",
   },
   modalTitleNight: {
-    color: "#fff",
+    color: "#FFFFFF",
   },
   modalInput: {
     borderWidth: 1,
-    borderColor: "#e9ecef",
+    borderColor: "#E9ECEF",
     borderRadius: 12,
-    minHeight: 120,
-    padding: 16,
+    minHeight: 80,
+    padding: 12,
     textAlignVertical: "top",
-    marginBottom: 20,
-    fontSize: 16,
-    color: "#333",
-    backgroundColor: "#f8f9fa",
+    marginBottom: 16,
+    fontSize: 14,
+    color: "#1F2937",
+    backgroundColor: "#F8F9FA",
   },
   modalInputNight: {
     borderColor: "#404040",
-    color: "#fff",
+    color: "#FFFFFF",
     backgroundColor: "#2a2a2a",
   },
   modalButtons: {
     flexDirection: "row",
     justifyContent: "space-between",
-    gap: 12,
+    gap: 10,
   },
-  modalButton: {
+  cancelButton: {
     flex: 1,
-    paddingVertical: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  submitButton: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  applyButton: {
+    paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 12,
     alignItems: "center",
-  },
-  cancelButton: {
-    backgroundColor: "#6c757d",
-  },
-  cancelButtonNight: {
-    backgroundColor: "#495057",
-  },
-  submitButton: {
-    backgroundColor: Colors.light.gold,
-  },
-  submitButtonNight: {
-    backgroundColor: "#FFD700",
+    marginTop: 16,
   },
   modalButtonText: {
-    color: "#fff",
+    color: "#FFFFFF",
     fontWeight: "bold",
-    fontSize: 16,
-  },
-  modalButtonTextNight: {
-    color: "#121212",
+    fontSize: 14,
   },
   filterSection: {
-    marginBottom: 20,
+    marginBottom: 16,
   },
   filterSectionTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "600",
-    color: "#111",
-    marginBottom: 12,
+    color: "#1F2937",
+    marginBottom: 8,
   },
   filterSectionTitleNight: {
-    color: "#fff",
+    color: "#FFFFFF",
   },
   filterOption: {
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    marginBottom: 8,
-    backgroundColor: "#f8f9fa",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginBottom: 6,
+    backgroundColor: "#F8F9FA",
     borderWidth: 1,
-    borderColor: "#e9ecef",
+    borderColor: "#E9ECEF",
   },
   filterOptionNight: {
     backgroundColor: "#2a2a2a",
     borderColor: "#404040",
   },
   selectedFilterOption: {
-    backgroundColor: Colors.light.gold,
-    borderColor: Colors.light.gold,
+    backgroundColor: "#3B82F6",
+    borderColor: "#3B82F6",
   },
   filterOptionText: {
-    fontSize: 15,
-    color: "#333",
+    fontSize: 13,
+    color: "#1F2937",
     fontWeight: "500",
   },
   filterOptionTextNight: {
-    color: "#fff",
+    color: "#FFFFFF",
   },
   noBooksText: {
-    fontSize: 16,
-    color: "#666",
+    fontSize: 14,
+    color: "#6B7280",
     textAlign: "center",
-    paddingVertical: 40,
+    paddingVertical: 32,
     fontStyle: "italic",
   },
   noBooksTextNight: {
-    color: "#aaa",
+    color: "#9CA3AF",
   },
 })

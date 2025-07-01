@@ -1,16 +1,29 @@
 {
   "expo": {
-    "name": "Edusphere-expo-nativewind",
-    "slug": "Edusphere-expo-nativewind",
+    "name": "Edusphere",
+    "slug": "Edusphere",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "myapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.tonentreprise.edusphere"
+      "bundleIdentifier": "com.tonentreprise.edusphere",
+      "statusBarStyle": "auto"
+    },
+    "android": {
+      "package": "com.tonentreprise.edusphere",
+      "statusBarBackgroundColor": "transparent",
+      "statusBarTranslucent": true,
+      "navigationBarColor": "transparent",
+      "softwareKeyboardLayoutMode": "pan"
     },
     "web": {
       "bundler": "metro",
@@ -28,11 +41,8 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "661787f3-afd9-4fab-8aa9-06452e66cd81"
+        "projectId": "97ecd596-0470-4d21-9e86-8cfeba077411"
       }
-    },
-    "android": {
-      "package": "com.tonentreprise.edusphere"
     },
     "owner": "nellito"
   }

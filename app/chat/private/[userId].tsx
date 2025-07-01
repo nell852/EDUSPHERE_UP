@@ -13,32 +13,19 @@ import {
   Platform,
   Image,
   Alert,
+  ActivityIndicator,
 } from "react-native"
+import { LinearGradient } from "expo-linear-gradient"
 import { useLocalSearchParams, useRouter } from "expo-router"
-import { Send, ArrowLeft, Phone, Video } from "lucide-react-native"
+import { Send, ArrowLeft, Phone, Video, MessageCircle } from "lucide-react-native"
 import { chatService, type ChatMessage } from "../../../services/chatService"
 import { userService } from "../../../services/userService"
 import { supabase } from "../../../lib/supabase"
 
-const Colors = {
-  primary: "#007AFF",
-  secondary: "#5856D6",
-  success: "#34C759",
-  warning: "#FF9500",
-  danger: "#FF3B30",
-  white: "#FFFFFF",
-  black: "#000000",
-  gray: "#8E8E93",
-  lightGray: "#F2F2F7",
-  darkGray: "#48484A",
-  background: "#F2F2F7",
-  myMessage: "#007AFF",
-  otherMessage: "#E5E5EA",
-}
-
 export default function PrivateChatScreen() {
   const { userId, name } = useLocalSearchParams<{ userId: string; name: string }>()
   const router = useRouter()
+
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [newMessage, setNewMessage] = useState("")
   const [loading, setLoading] = useState(true)
@@ -46,13 +33,13 @@ export default function PrivateChatScreen() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [currentUser, setCurrentUser] = useState<any>(null)
   const [otherUser, setOtherUser] = useState<any>(null)
+
   const flatListRef = useRef<FlatList>(null)
   const subscriptionRef = useRef<any>(null)
 
   useEffect(() => {
     console.log("Paramètres reçus:", { userId, name })
 
-    // Vérifier que userId est valide
     if (!userId || userId === "null" || userId === "undefined") {
       Alert.alert("Erreur", "ID utilisateur invalide")
       router.back()
@@ -70,12 +57,10 @@ export default function PrivateChatScreen() {
 
   const initializeChat = async () => {
     try {
-      // Vérifier que userId est valide
       if (!userId || userId === "null" || userId === "undefined") {
         throw new Error("ID utilisateur invalide")
       }
 
-      // Récupérer l'utilisateur actuel
       const { data: user } = await supabase.auth.getUser()
       if (!user.user) {
         Alert.alert("Erreur", "Vous devez être connecté")
@@ -86,16 +71,12 @@ export default function PrivateChatScreen() {
       console.log("Utilisateur actuel:", user.user.id)
       console.log("Utilisateur cible:", userId)
 
-      // Définir l'ID utilisateur AVANT de charger les messages
       setCurrentUserId(user.user.id)
 
-      // S'assurer que le profil de l'utilisateur actuel existe
       const currentUserProfile = await userService.ensureProfileExists()
       setCurrentUser(currentUserProfile)
 
-      // Récupérer les infos de l'autre utilisateur
       const otherUserProfile = await userService.getUserById(userId)
-
       if (otherUserProfile) {
         setOtherUser(otherUserProfile)
       } else {
@@ -104,10 +85,8 @@ export default function PrivateChatScreen() {
         return
       }
 
-      // Charger les messages APRÈS avoir défini currentUserId
       await loadMessages(user.user.id, userId)
 
-      // S'abonner aux nouveaux messages privés
       subscriptionRef.current = supabase
         .channel(`private-${user.user.id}-${userId}`)
         .on(
@@ -119,28 +98,21 @@ export default function PrivateChatScreen() {
             filter: `and(or(and(expediteur_id.eq.${user.user.id},destinataire_id.eq.${userId}),and(expediteur_id.eq.${userId},destinataire_id.eq.${user.user.id})),club_id.is.null)`,
           },
           async (payload) => {
-            // Récupérer les détails de l'expéditeur
             const expediteurProfile = await userService.getUserById(payload.new.expediteur_id)
-
             const messageWithSender: ChatMessage = {
               ...(payload.new as any),
               expediteur: expediteurProfile,
             }
 
             setMessages((prev) => {
-              // Supprimer le message temporaire s'il existe
               const withoutTemp = prev.filter((m) => !m.id.startsWith("temp-"))
-
-              // Vérifier si le message existe déjà
               const messageExists = withoutTemp.some((m) => m.id === messageWithSender.id)
               if (messageExists) return prev
 
-              // Ajouter le nouveau message et trier par date
               const newMessages = [...withoutTemp, messageWithSender]
               return newMessages.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
             })
 
-            // Auto-scroll vers le bas
             setTimeout(() => {
               flatListRef.current?.scrollToEnd({ animated: true })
             }, 100)
@@ -157,7 +129,6 @@ export default function PrivateChatScreen() {
 
   const loadMessages = async (currentUserIdParam: string, targetUserIdParam: string) => {
     try {
-      // Vérifications strictes
       if (
         !currentUserIdParam ||
         !targetUserIdParam ||
@@ -172,10 +143,8 @@ export default function PrivateChatScreen() {
 
       console.log("Chargement des messages entre:", currentUserIdParam, "et", targetUserIdParam)
 
-      // Utiliser deux requêtes séparées au lieu d'une requête OR complexe
       const [{ data: sentMessages, error: sentError }, { data: receivedMessages, error: receivedError }] =
         await Promise.all([
-          // Messages envoyés par l'utilisateur actuel
           supabase
             .from("messages")
             .select(`
@@ -185,8 +154,6 @@ export default function PrivateChatScreen() {
             .eq("expediteur_id", currentUserIdParam)
             .eq("destinataire_id", targetUserIdParam)
             .is("club_id", null),
-
-          // Messages reçus par l'utilisateur actuel
           supabase
             .from("messages")
             .select(`
@@ -208,10 +175,7 @@ export default function PrivateChatScreen() {
         throw receivedError
       }
 
-      // Combiner et trier les messages, en supprimant les doublons
       const allMessages = [...(sentMessages || []), ...(receivedMessages || [])]
-
-      // Supprimer les doublons basés sur l'ID
       const uniqueMessages = allMessages.filter(
         (message, index, self) => index === self.findIndex((m) => m.id === message.id),
       )
@@ -223,7 +187,6 @@ export default function PrivateChatScreen() {
       console.log("Messages chargés:", sortedMessages.length)
       setMessages(sortedMessages)
 
-      // Auto-scroll vers le bas après chargement
       setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated: false })
       }, 100)
@@ -237,9 +200,8 @@ export default function PrivateChatScreen() {
 
     const messageText = newMessage.trim()
     const tempId = `temp-${Date.now()}-${Math.random()}`
-    setNewMessage("") // Vider le champ immédiatement
+    setNewMessage("")
 
-    // Créer un message temporaire pour l'affichage immédiat
     const tempMessage: ChatMessage = {
       id: tempId,
       expediteur_id: currentUserId,
@@ -253,23 +215,18 @@ export default function PrivateChatScreen() {
       expediteur: currentUser,
     }
 
-    // Ajouter le message temporaire à l'affichage
     setMessages((prev) => [...prev, tempMessage])
     setTimeout(() => {
       flatListRef.current?.scrollToEnd({ animated: true })
     }, 100)
 
     setSending(true)
+
     try {
       await chatService.sendPrivateMessage(userId, messageText)
-
-      // Le message temporaire sera automatiquement remplacé par le vrai message
-      // via l'abonnement temps réel
     } catch (error) {
       console.error("Erreur lors de l'envoi du message:", error)
       Alert.alert("Erreur", "Impossible d'envoyer le message")
-
-      // Supprimer le message temporaire en cas d'erreur
       setMessages((prev) => prev.filter((m) => m.id !== tempId))
     } finally {
       setSending(false)
@@ -282,23 +239,25 @@ export default function PrivateChatScreen() {
 
     return (
       <View style={[styles.messageContainer, isMyMessage ? styles.myMessageContainer : styles.otherMessageContainer]}>
-        <View
-          style={[
-            styles.messageBubble,
-            isMyMessage ? styles.myMessageBubble : styles.otherMessageBubble,
-            isTemporary && styles.temporaryMessage,
-          ]}
-        >
-          <Text style={[styles.messageText, isMyMessage ? styles.myMessageText : styles.otherMessageText]}>
-            {item.contenu}
-          </Text>
-          <Text style={[styles.messageTime, isMyMessage ? styles.myMessageTime : styles.otherMessageTime]}>
-            {new Date(item.created_at).toLocaleTimeString("fr-FR", {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
-            {isTemporary && " ⏳"}
-          </Text>
+        <View style={[styles.messageBubble, isTemporary && styles.temporaryMessage]}>
+          <LinearGradient
+            colors={
+              isMyMessage ? ["#3B82F6", "#60A5FA"] : isTemporary ? ["#F3F4F6", "#E5E7EB"] : ["#F8F9FA", "#FFFFFF"]
+            }
+            style={[styles.messageBubbleGradient, isMyMessage ? styles.myMessage : styles.otherMessage]}
+          >
+            <Text style={[styles.messageText, isMyMessage ? styles.myMessageText : styles.otherMessageText]}>
+              {item.contenu}
+            </Text>
+            <Text style={[styles.messageTime, isMyMessage ? styles.myMessageTime : styles.otherMessageTime]}>
+              🕐{" "}
+              {new Date(item.created_at).toLocaleTimeString("fr-FR", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+              {isTemporary && " ⏳"}
+            </Text>
+          </LinearGradient>
         </View>
       </View>
     )
@@ -308,7 +267,10 @@ export default function PrivateChatScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <Text>Chargement du chat...</Text>
+          <LinearGradient colors={["#EBF4FF", "#DBEAFE"]} style={styles.loadingCard}>
+            <ActivityIndicator size="large" color="#3B82F6" />
+            <Text style={styles.loadingText}>💬 Chargement du chat privé...</Text>
+          </LinearGradient>
         </View>
       </SafeAreaView>
     )
@@ -321,29 +283,44 @@ export default function PrivateChatScreen() {
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <ArrowLeft size={24} color={Colors.primary} />
+      <LinearGradient colors={["#FFFFFF", "#F8F9FA"]} style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()} activeOpacity={0.8}>
+          <LinearGradient colors={["#EBF4FF", "#DBEAFE"]} style={styles.iconButton}>
+            <ArrowLeft size={18} color="#3B82F6" />
+          </LinearGradient>
         </TouchableOpacity>
-        <Image
-          source={{
-            uri: otherUser?.photo_profil_url || "https://via.placeholder.com/40",
-          }}
-          style={styles.headerAvatar}
-        />
-        <View style={styles.headerInfo}>
-          <Text style={styles.headerTitle}>{displayName || "Utilisateur"}</Text>
-          <Text style={styles.headerSubtitle}>En ligne</Text>
+
+        <View style={styles.userInfo}>
+          <View style={styles.avatarContainer}>
+            <Image
+              source={{
+                uri: otherUser?.photo_profil_url || "https://via.placeholder.com/40",
+              }}
+              style={styles.headerAvatar}
+            />
+            <LinearGradient colors={["#10B981", "#34D399"]} style={styles.onlineIndicator} />
+          </View>
+
+          <View style={styles.headerInfo}>
+            <Text style={styles.headerTitle}>👤 {displayName || "Utilisateur"}</Text>
+            <Text style={styles.headerSubtitle}>🟢 En ligne</Text>
+          </View>
         </View>
+
         <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.actionButton}>
-            <Phone size={20} color={Colors.primary} />
+          <TouchableOpacity style={styles.actionButton} activeOpacity={0.8}>
+            <LinearGradient colors={["#EBF4FF", "#DBEAFE"]} style={styles.actionButtonGradient}>
+              <Phone size={16} color="#3B82F6" />
+            </LinearGradient>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionButton}>
-            <Video size={20} color={Colors.primary} />
+
+          <TouchableOpacity style={styles.actionButton} activeOpacity={0.8}>
+            <LinearGradient colors={["#EBF4FF", "#DBEAFE"]} style={styles.actionButtonGradient}>
+              <Video size={16} color="#3B82F6" />
+            </LinearGradient>
           </TouchableOpacity>
         </View>
-      </View>
+      </LinearGradient>
 
       {/* Messages */}
       <KeyboardAvoidingView style={styles.chatContainer} behavior={Platform.OS === "ios" ? "padding" : "height"}>
@@ -351,32 +328,50 @@ export default function PrivateChatScreen() {
           ref={flatListRef}
           data={messages}
           renderItem={renderMessage}
-          keyExtractor={(item, index) => `${item.id}-${index}`} // Clé unique combinée
+          keyExtractor={(item, index) => `${item.id}-${index}`}
           style={styles.messagesList}
           contentContainerStyle={styles.messagesContent}
           showsVerticalScrollIndicator={false}
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <LinearGradient colors={["#EBF4FF", "#DBEAFE"]} style={styles.emptyStateCard}>
+                <MessageCircle size={32} color="#3B82F6" />
+                <Text style={styles.emptyStateText}>💬 Aucun message</Text>
+                <Text style={styles.emptyStateSubtext}>Commencez la conversation !</Text>
+              </LinearGradient>
+            </View>
+          }
         />
 
-        {/* Input */}
-        <View style={styles.inputContainer}>
-          <TextInput
-            style={styles.textInput}
-            placeholder="Tapez votre message..."
-            value={newMessage}
-            onChangeText={setNewMessage}
-            multiline
-            maxLength={1000}
-            placeholderTextColor={Colors.gray}
-          />
+        {/* Input Container */}
+        <LinearGradient colors={["#FFFFFF", "#F8F9FA"]} style={styles.inputContainer}>
+          <LinearGradient colors={["#F8F9FA", "#FFFFFF"]} style={styles.textInputContainer}>
+            <TextInput
+              style={styles.textInput}
+              placeholder="💭 Tapez votre message..."
+              value={newMessage}
+              onChangeText={setNewMessage}
+              multiline
+              maxLength={1000}
+              placeholderTextColor="#9CA3AF"
+            />
+          </LinearGradient>
+
           <TouchableOpacity
-            style={[styles.sendButton, (!newMessage.trim() || sending) && styles.sendButtonDisabled]}
+            style={styles.sendButtonContainer}
             onPress={sendMessage}
             disabled={!newMessage.trim() || sending}
+            activeOpacity={0.8}
           >
-            <Send size={20} color={Colors.white} />
+            <LinearGradient
+              colors={!newMessage.trim() || sending ? ["#D1D5DB", "#9CA3AF"] : ["#3B82F6", "#60A5FA"]}
+              style={styles.sendButton}
+            >
+              {sending ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Send size={16} color="#FFFFFF" />}
+            </LinearGradient>
           </TouchableOpacity>
-        </View>
+        </LinearGradient>
       </KeyboardAvoidingView>
     </SafeAreaView>
   )
@@ -385,63 +380,113 @@ export default function PrivateChatScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: "#F8FAFF",
   },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    padding: 32,
+  },
+  loadingCard: {
+    alignItems: "center",
+    padding: 24,
+    borderRadius: 20,
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: "#1F2937",
+    fontWeight: "500",
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.lightGray,
-    backgroundColor: Colors.white,
+    borderBottomWidth: 0.5,
+    borderBottomColor: "#E5E7EB",
   },
   backButton: {
     marginRight: 12,
+    borderRadius: 20,
+    overflow: "hidden",
+  },
+  iconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  userInfo: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  avatarContainer: {
+    position: "relative",
+    marginRight: 12,
   },
   headerAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    marginRight: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+  },
+  onlineIndicator: {
+    position: "absolute",
+    bottom: 0,
+    right: 0,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
   },
   headerInfo: {
     flex: 1,
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 14,
     fontWeight: "600",
-    color: Colors.black,
+    color: "#1F2937",
   },
   headerSubtitle: {
-    fontSize: 14,
-    color: Colors.success,
+    fontSize: 11,
+    color: "#10B981",
+    marginTop: 2,
   },
   headerActions: {
     flexDirection: "row",
+    gap: 8,
   },
   actionButton: {
-    marginLeft: 16,
+    borderRadius: 16,
+    overflow: "hidden",
+  },
+  actionButtonGradient: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
   },
   chatContainer: {
     flex: 1,
   },
   messagesList: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: "#F8FAFF",
   },
   messagesContent: {
     paddingVertical: 16,
+    paddingHorizontal: 16,
   },
   messageContainer: {
     flexDirection: "row",
     marginBottom: 8,
-    paddingHorizontal: 16,
   },
   myMessageContainer: {
     justifyContent: "flex-end",
@@ -451,71 +496,108 @@ const styles = StyleSheet.create({
   },
   messageBubble: {
     maxWidth: "75%",
+    borderRadius: 16,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  messageBubbleGradient: {
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 18,
+    borderRadius: 16,
   },
-  myMessageBubble: {
-    backgroundColor: Colors.myMessage,
+  myMessage: {
+    alignSelf: "flex-end",
+    borderBottomRightRadius: 4,
   },
-  otherMessageBubble: {
-    backgroundColor: Colors.otherMessage,
+  otherMessage: {
+    alignSelf: "flex-start",
+    borderBottomLeftRadius: 4,
+    borderWidth: 1,
+    borderColor: "#F0F0F0",
   },
   temporaryMessage: {
     opacity: 0.7,
   },
   messageText: {
-    fontSize: 16,
-    lineHeight: 20,
+    fontSize: 14,
+    lineHeight: 18,
   },
   myMessageText: {
-    color: Colors.white,
+    color: "#FFFFFF",
   },
   otherMessageText: {
-    color: Colors.black,
+    color: "#1F2937",
   },
   messageTime: {
-    fontSize: 11,
+    fontSize: 9,
     marginTop: 4,
   },
   myMessageTime: {
-    color: Colors.white,
-    opacity: 0.7,
+    color: "#FFFFFF",
+    opacity: 0.8,
     textAlign: "right",
   },
   otherMessageTime: {
-    color: Colors.gray,
+    color: "#6B7280",
+  },
+  emptyState: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 64,
+  },
+  emptyStateCard: {
+    alignItems: "center",
+    padding: 24,
+    borderRadius: 20,
+  },
+  emptyStateText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#1F2937",
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  emptyStateSubtext: {
+    fontSize: 12,
+    color: "#6B7280",
   },
   inputContainer: {
     flexDirection: "row",
     alignItems: "flex-end",
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: Colors.white,
-    borderTopWidth: 1,
-    borderTopColor: Colors.lightGray,
+    borderTopWidth: 0.5,
+    borderTopColor: "#E5E7EB",
+    gap: 8,
+  },
+  textInputContainer: {
+    flex: 1,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#E9ECEF",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   textInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: Colors.lightGray,
+    fontSize: 14,
+    color: "#1F2937",
+    maxHeight: 80,
+    minHeight: 36,
+  },
+  sendButtonContainer: {
     borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    marginRight: 8,
-    maxHeight: 100,
-    fontSize: 16,
-    color: Colors.black,
+    overflow: "hidden",
   },
   sendButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: Colors.primary,
     justifyContent: "center",
     alignItems: "center",
-  },
-  sendButtonDisabled: {
-    backgroundColor: Colors.gray,
   },
 })

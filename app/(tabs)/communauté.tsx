@@ -16,26 +16,12 @@ import {
   SafeAreaView,
   RefreshControl,
 } from "react-native"
+import { LinearGradient } from "expo-linear-gradient"
 import { Plus, Search, Users, MessageCircle, Calendar, Award, X, Bell, Check } from "lucide-react-native"
 import { clubService, type ClubWithDetails, type FeedItem } from "../../services/clubService"
 import { supabase } from "../../lib/supabase"
 import * as ImagePicker from "expo-image-picker"
 import { router } from "expo-router"
-
-const Colors = {
-  primary: "#007AFF",
-  secondary: "#5856D6",
-  success: "#34C759",
-  warning: "#FF9500",
-  danger: "#FF3B30",
-  white: "#FFFFFF",
-  black: "#000000",
-  gray: "#8E8E93",
-  lightGray: "#F2F2F7",
-  darkGray: "#48484A",
-  background: "#F2F2F7",
-  gold: "#FFD700",
-}
 
 interface PendingRequest {
   id: string
@@ -98,7 +84,6 @@ export default function CommunityScreen() {
         },
         (payload) => {
           console.log("Nouvelle notification reçue:", payload)
-          // Recharger les notifications
           loadNotifications()
         },
       )
@@ -168,7 +153,6 @@ export default function CommunityScreen() {
 
       console.log("Chargement des notifications pour:", user.user.id)
 
-      // Récupérer seulement les notifications non lues
       const { data: unreadNotifs, error: unreadError } = await supabase
         .from("notifications")
         .select("*")
@@ -215,10 +199,7 @@ export default function CommunityScreen() {
 
   const handleNotificationClick = async (notification: any) => {
     try {
-      // Marquer la notification comme lue
       await markNotificationAsRead(notification.id)
-
-      // Rediriger selon le type de notification
       if (notification.type === "demande_adhesion") {
         setShowNotifications(false)
         setShowRequestsModal(true)
@@ -232,10 +213,7 @@ export default function CommunityScreen() {
   const markNotificationAsRead = async (notificationId: string) => {
     try {
       const { error } = await supabase.from("notifications").update({ read: true }).eq("id", notificationId)
-
       if (error) throw error
-
-      // Recharger les notifications
       await loadNotifications()
     } catch (error) {
       console.error("Erreur lors de la mise à jour de la notification:", error)
@@ -247,8 +225,6 @@ export default function CommunityScreen() {
     try {
       await clubService.handleJoinRequest(requestId, action)
       Alert.alert("Succès", action === "accepter" ? "Demande acceptée !" : "Demande refusée")
-
-      // Recharger toutes les données
       await Promise.all([loadPendingRequests(), loadNotifications(), loadMyClubs(), loadClubs()])
     } catch (error) {
       Alert.alert("Erreur", "Impossible de traiter la demande")
@@ -264,7 +240,6 @@ export default function CommunityScreen() {
     setRefreshing(false)
   }, [])
 
-  // Créer un club
   const createClub = async () => {
     if (!newClubName || !newClubDomain || !newClubDescription) {
       Alert.alert("Erreur", "Veuillez remplir tous les champs obligatoires")
@@ -275,21 +250,15 @@ export default function CommunityScreen() {
     try {
       let avatarUrl = null
 
-      // Upload de l'avatar si sélectionné
       if (newClubAvatar) {
         const { data: user } = await supabase.auth.getUser()
         if (user.user) {
           const fileName = `club_avatars/${user.user.id}_${Date.now()}.jpg`
-
           const response = await fetch(newClubAvatar)
           const blob = await response.blob()
-
           const { error: uploadError } = await supabase.storage.from("avatars").upload(fileName, blob)
-
           if (uploadError) throw uploadError
-
           const { data: publicUrl } = supabase.storage.from("avatars").getPublicUrl(fileName)
-
           avatarUrl = publicUrl.publicUrl
         }
       }
@@ -301,16 +270,13 @@ export default function CommunityScreen() {
         avatar_url: avatarUrl || undefined,
       })
 
-      // Réinitialiser le formulaire
       setNewClubName("")
       setNewClubDomain("")
       setNewClubDescription("")
       setNewClubAvatar(null)
       setShowCreateModal(false)
-
       Alert.alert("Succès", "Club créé avec succès !")
 
-      // Recharger les données
       await loadMyClubs()
       await loadClubs()
     } catch (err) {
@@ -320,22 +286,19 @@ export default function CommunityScreen() {
     }
   }
 
-  // Faire une demande d'adhésion
   const requestJoinClub = async (clubId: string, clubName: string) => {
     try {
       await clubService.requestJoinClub(clubId, `Je souhaite rejoindre le club ${clubName}`)
       Alert.alert("Demande envoyée", "Votre demande d'adhésion a été envoyée au propriétaire du club")
-
-      // Recharger les clubs pour mettre à jour le statut
       await loadClubs(searchQuery)
     } catch (err) {
       Alert.alert("Erreur", err instanceof Error ? err.message : "Erreur lors de la demande d'adhésion")
     }
   }
 
-  // Sélectionner une image pour l'avatar
   const pickImage = async () => {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync()
+
     if (!permissionResult.granted) {
       Alert.alert("Erreur", "Permission d'accès à la galerie refusée")
       return
@@ -353,95 +316,116 @@ export default function CommunityScreen() {
     }
   }
 
-  // Rendu d'un club
   const renderClubItem = ({ item, showJoinButton = true }: { item: ClubWithDetails; showJoinButton?: boolean }) => (
-    <TouchableOpacity style={styles.clubCard}>
-      <Image source={{ uri: item.avatar_url || "https://via.placeholder.com/50" }} style={styles.clubAvatar} />
-      <View style={styles.clubInfo}>
-        <Text style={styles.clubName}>{item.nom}</Text>
-        <Text style={styles.clubDomain}>{item.domaine}</Text>
-        <View style={styles.clubMembersContainer}>
-          <Users size={14} color={Colors.gray} />
-          <Text style={styles.clubMembers}>{item.membres_count} membres</Text>
-        </View>
-        <Text style={styles.clubDescription} numberOfLines={2}>
-          {item.description}
-        </Text>
-      </View>
-      {showJoinButton && !item.is_member && (
-        <TouchableOpacity
-          style={[styles.joinButton, item.demande_pending && styles.pendingButton]}
-          onPress={() => requestJoinClub(item.id, item.nom)}
-          disabled={item.demande_pending}
-        >
-          <Text style={[styles.joinButtonText, item.demande_pending && styles.pendingButtonText]}>
-            {item.demande_pending ? "En attente" : "Rejoindre"}
+    <TouchableOpacity style={styles.clubCard} activeOpacity={0.8}>
+      <LinearGradient colors={["#FFFFFF", "#F8F9FA"]} style={styles.clubCardGradient}>
+        <Image source={{ uri: item.avatar_url || "https://via.placeholder.com/50" }} style={styles.clubAvatar} />
+        <View style={styles.clubInfo}>
+          <Text style={styles.clubName}>{item.nom}</Text>
+          <Text style={styles.clubDomain}>🏷️ {item.domaine}</Text>
+          <View style={styles.clubMembersContainer}>
+            <Users size={12} color="#6B7280" />
+            <Text style={styles.clubMembers}>{item.membres_count} membres</Text>
+          </View>
+          <Text style={styles.clubDescription} numberOfLines={2}>
+            {item.description}
           </Text>
-        </TouchableOpacity>
-      )}
-      {item.is_member && (
-        <TouchableOpacity
-          style={styles.chatButton}
-          onPress={() => router.push(`/chat/club/${item.id}?name=${encodeURIComponent(item.nom)}`)}
-        >
-          <MessageCircle size={16} color={Colors.white} />
-        </TouchableOpacity>
-      )}
+        </View>
+
+        <View style={styles.clubActions}>
+          {showJoinButton && !item.is_member && (
+            <TouchableOpacity
+              onPress={() => requestJoinClub(item.id, item.nom)}
+              disabled={item.demande_pending}
+              activeOpacity={0.8}
+            >
+              <LinearGradient
+                colors={item.demande_pending ? ["#F59E0B", "#FBBF24"] : ["#3B82F6", "#60A5FA"]}
+                style={styles.joinButton}
+              >
+                <Text style={styles.joinButtonText}>{item.demande_pending ? "En attente" : "Rejoindre"}</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          )}
+
+          {item.is_member && (
+            <TouchableOpacity
+              onPress={() => router.push(`/chat/club/${item.id}?name=${encodeURIComponent(item.nom)}`)}
+              activeOpacity={0.8}
+            >
+              <LinearGradient colors={["#10B981", "#34D399"]} style={styles.chatButton}>
+                <MessageCircle size={14} color="#FFFFFF" />
+                <Text style={styles.chatButtonText}>Chat</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          )}
+        </View>
+      </LinearGradient>
     </TouchableOpacity>
   )
 
-  // Rendu d'un élément du flux
   const renderFeedItem = ({ item }: { item: FeedItem }) => {
-    let icon, backgroundColor
+    let icon: React.ReactNode
+    let colors: [string, string]
+
     switch (item.type) {
       case "event":
-        icon = <Calendar size={20} color={Colors.white} />
-        backgroundColor = Colors.primary
+        icon = <Calendar size={16} color="#FFFFFF" />
+        colors = ["#3B82F6", "#60A5FA"]
         break
       case "challenge":
-        icon = <Award size={20} color={Colors.white} />
-        backgroundColor = Colors.success
+        icon = <Award size={16} color="#FFFFFF" />
+        colors = ["#10B981", "#34D399"]
         break
       case "discussion":
-        icon = <MessageCircle size={20} color={Colors.white} />
-        backgroundColor = Colors.secondary
+        icon = <MessageCircle size={16} color="#FFFFFF" />
+        colors = ["#8B5CF6", "#A78BFA"]
         break
       default:
         icon = null
-        backgroundColor = Colors.primary
+        colors = ["#3B82F6", "#60A5FA"]
     }
 
     return (
       <TouchableOpacity
         style={styles.feedItem}
         onPress={() => router.push(`/chat/club/${item.club_id}?name=${encodeURIComponent(item.club)}`)}
+        activeOpacity={0.8}
       >
-        <View style={[styles.feedItemIcon, { backgroundColor }]}>{icon}</View>
-        <View style={styles.feedItemContent}>
-          <Text style={styles.feedItemTitle}>{item.title}</Text>
-          <Text style={styles.feedItemClub}>{item.club}</Text>
-          <View style={styles.feedItemDetails}>
-            <Text style={styles.feedItemDate}>{new Date(item.date).toLocaleDateString("fr-FR")}</Text>
-            <View style={styles.feedItemParticipants}>
-              <Users size={12} color={Colors.gray} />
-              <Text style={styles.feedItemParticipantsText}>{item.participants}</Text>
+        <LinearGradient colors={["#FFFFFF", "#F8F9FA"]} style={styles.feedItemGradient}>
+          <LinearGradient colors={colors} style={styles.feedItemIcon}>
+            {icon}
+          </LinearGradient>
+          <View style={styles.feedItemContent}>
+            <Text style={styles.feedItemTitle}>{item.title}</Text>
+            <Text style={styles.feedItemClub}>📍 {item.club}</Text>
+            <View style={styles.feedItemDetails}>
+              <Text style={styles.feedItemDate}>📅 {new Date(item.date).toLocaleDateString("fr-FR")}</Text>
+              <View style={styles.feedItemParticipants}>
+                <Users size={10} color="#6B7280" />
+                <Text style={styles.feedItemParticipantsText}>{item.participants}</Text>
+              </View>
             </View>
           </View>
-        </View>
+        </LinearGradient>
       </TouchableOpacity>
     )
   }
 
   const renderEmptyState = (title: string, subtitle: string, buttonText?: string, onButtonPress?: () => void) => (
     <View style={styles.emptyState}>
-      <Users size={48} color={Colors.lightGray} />
-      <Text style={styles.emptyStateTitle}>{title}</Text>
-      <Text style={styles.emptyStateSubtitle}>{subtitle}</Text>
-      {buttonText && onButtonPress && (
-        <TouchableOpacity style={styles.emptyStateButton} onPress={onButtonPress}>
-          <Text style={styles.emptyStateButtonText}>{buttonText}</Text>
-        </TouchableOpacity>
-      )}
+      <LinearGradient colors={["#EBF4FF", "#DBEAFE"]} style={styles.emptyStateCard}>
+        <Users size={32} color="#3B82F6" />
+        <Text style={styles.emptyStateTitle}>{title}</Text>
+        <Text style={styles.emptyStateSubtitle}>{subtitle}</Text>
+        {buttonText && onButtonPress && (
+          <TouchableOpacity onPress={onButtonPress} activeOpacity={0.8}>
+            <LinearGradient colors={["#3B82F6", "#60A5FA"]} style={styles.emptyStateButton}>
+              <Text style={styles.emptyStateButtonText}>{buttonText}</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        )}
+      </LinearGradient>
     </View>
   )
 
@@ -449,112 +433,147 @@ export default function CommunityScreen() {
     const memberName = `${item.utilisateurs?.prenom || ""} ${item.utilisateurs?.nom || ""}`.trim()
 
     return (
-      <View style={styles.requestCard}>
-        <Image
-          source={{
-            uri: item.utilisateurs?.photo_profil_url || "https://via.placeholder.com/50",
-          }}
-          style={styles.memberAvatar}
-        />
-        <View style={styles.requestInfo}>
-          <Text style={styles.memberName}>{memberName || "Utilisateur"}</Text>
-          <Text style={styles.clubName}>Club: {item.clubs.nom}</Text>
-          {item.message && <Text style={styles.requestMessage}>"{item.message}"</Text>}
-          <Text style={styles.requestDate}>{new Date(item.created_at).toLocaleDateString("fr-FR")}</Text>
-        </View>
-        <View style={styles.actionButtons}>
-          <TouchableOpacity
-            style={[styles.actionButton, styles.acceptButton]}
-            onPress={() => handleJoinRequest(item.id, "accepter")}
-            disabled={processingRequest === item.id}
-          >
-            {processingRequest === item.id ? (
-              <ActivityIndicator size="small" color={Colors.white} />
-            ) : (
-              <Check size={20} color={Colors.white} />
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionButton, styles.rejectButton]}
-            onPress={() => handleJoinRequest(item.id, "refuser")}
-            disabled={processingRequest === item.id}
-          >
-            <X size={20} color={Colors.white} />
-          </TouchableOpacity>
-        </View>
-      </View>
+      <TouchableOpacity style={styles.requestCard} activeOpacity={0.8}>
+        <LinearGradient colors={["#FFFFFF", "#F8F9FA"]} style={styles.requestCardGradient}>
+          <Image
+            source={{
+              uri: item.utilisateurs?.photo_profil_url || "https://via.placeholder.com/50",
+            }}
+            style={styles.memberAvatar}
+          />
+          <View style={styles.requestInfo}>
+            <Text style={styles.memberName}>{memberName || "Utilisateur"}</Text>
+            <Text style={styles.clubName}>🏛️ {item.clubs.nom}</Text>
+            {item.message && <Text style={styles.requestMessage}> "{item.message}"</Text>}
+            <Text style={styles.requestDate}>📅 {new Date(item.created_at).toLocaleDateString("fr-FR")}</Text>
+          </View>
+          <View style={styles.actionButtons}>
+            <TouchableOpacity
+              onPress={() => handleJoinRequest(item.id, "accepter")}
+              disabled={processingRequest === item.id}
+              activeOpacity={0.8}
+            >
+              <LinearGradient colors={["#10B981", "#34D399"]} style={styles.actionButton}>
+                {processingRequest === item.id ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Check size={16} color="#FFFFFF" />
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => handleJoinRequest(item.id, "refuser")}
+              disabled={processingRequest === item.id}
+              activeOpacity={0.8}
+            >
+              <LinearGradient colors={["#EF4444", "#F87171"]} style={styles.actionButton}>
+                <X size={16} color="#FFFFFF" />
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </LinearGradient>
+      </TouchableOpacity>
     )
   }
 
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
+      <LinearGradient colors={["#FFFFFF", "#F8F9FA"]} style={styles.header}>
         <View style={styles.searchContainer}>
-          <Search size={20} color={Colors.gray} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Rechercher des clubs, discussions..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholderTextColor={Colors.gray}
-          />
+          <LinearGradient colors={["#F8F9FA", "#FFFFFF"]} style={styles.searchInputContainer}>
+            <Search size={16} color="#9CA3AF" />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Rechercher des clubs..."
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholderTextColor="#9CA3AF"
+            />
+          </LinearGradient>
         </View>
 
-        <TouchableOpacity style={styles.notificationButton} onPress={() => setShowNotifications(true)}>
-          <Bell size={20} color={Colors.primary} />
-          {notifications.length > 0 && (
-            <View style={styles.notificationBadge}>
-              <Text style={styles.notificationBadgeText}>{notifications.length}</Text>
-            </View>
-          )}
+        <TouchableOpacity
+          style={styles.notificationButton}
+          onPress={() => setShowNotifications(true)}
+          activeOpacity={0.8}
+        >
+          <LinearGradient colors={["#EBF4FF", "#DBEAFE"]} style={styles.iconButtonGradient}>
+            <Bell size={16} color="#3B82F6" />
+            {notifications.length > 0 && (
+              <LinearGradient colors={["#EF4444", "#F87171"]} style={styles.notificationBadge}>
+                <Text style={styles.notificationBadgeText}>{notifications.length}</Text>
+              </LinearGradient>
+            )}
+          </LinearGradient>
         </TouchableOpacity>
 
-        {/* Bouton pour voir les demandes en attente */}
         {pendingRequests.length > 0 && (
-          <TouchableOpacity style={styles.requestsButton} onPress={() => setShowRequestsModal(true)}>
-            <Users size={20} color={Colors.warning} />
-            <View style={styles.requestsBadge}>
-              <Text style={styles.requestsBadgeText}>{pendingRequests.length}</Text>
-            </View>
+          <TouchableOpacity
+            style={styles.requestsButton}
+            onPress={() => setShowRequestsModal(true)}
+            activeOpacity={0.8}
+          >
+            <LinearGradient colors={["#FEF3C7", "#FDE68A"]} style={styles.iconButtonGradient}>
+              <Users size={16} color="#F59E0B" />
+              <LinearGradient colors={["#F59E0B", "#FBBF24"]} style={styles.requestsBadge}>
+                <Text style={styles.requestsBadgeText}>{pendingRequests.length}</Text>
+              </LinearGradient>
+            </LinearGradient>
           </TouchableOpacity>
         )}
 
-        <TouchableOpacity style={styles.createButton} onPress={() => setShowCreateModal(true)}>
-          <Plus size={20} color={Colors.white} />
+        <TouchableOpacity onPress={() => setShowCreateModal(true)} activeOpacity={0.8}>
+          <LinearGradient colors={["#3B82F6", "#60A5FA"]} style={styles.createButton}>
+            <Plus size={16} color="#FFFFFF" />
+          </LinearGradient>
         </TouchableOpacity>
-      </View>
+      </LinearGradient>
 
       {/* Tabs */}
       <View style={styles.tabsContainer}>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === "feed" && styles.activeTab]}
-          onPress={() => setActiveTab("feed")}
-        >
-          <Text style={[styles.tabText, activeTab === "feed" && styles.activeTabText]}>Flux</Text>
+        <TouchableOpacity style={styles.tab} onPress={() => setActiveTab("feed")} activeOpacity={0.8}>
+          <LinearGradient
+            colors={activeTab === "feed" ? ["#3B82F6", "#60A5FA"] : ["#F8F9FA", "#FFFFFF"]}
+            style={styles.tabGradient}
+          >
+            <Text style={[styles.tabText, activeTab === "feed" && styles.activeTabText]}>Flux</Text>
+          </LinearGradient>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === "clubs" && styles.activeTab]}
-          onPress={() => setActiveTab("clubs")}
-        >
-          <Text style={[styles.tabText, activeTab === "clubs" && styles.activeTabText]}>Clubs</Text>
+
+        <TouchableOpacity style={styles.tab} onPress={() => setActiveTab("clubs")} activeOpacity={0.8}>
+          <LinearGradient
+            colors={activeTab === "clubs" ? ["#3B82F6", "#60A5FA"] : ["#F8F9FA", "#FFFFFF"]}
+            style={styles.tabGradient}
+          >
+            <Text style={[styles.tabText, activeTab === "clubs" && styles.activeTabText]}> Clubs</Text>
+          </LinearGradient>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === "my-clubs" && styles.activeTab]}
-          onPress={() => setActiveTab("my-clubs")}
-        >
-          <Text style={[styles.tabText, activeTab === "my-clubs" && styles.activeTabText]}>Mes Clubs</Text>
+
+        <TouchableOpacity style={styles.tab} onPress={() => setActiveTab("my-clubs")} activeOpacity={0.8}>
+          <LinearGradient
+            colors={activeTab === "my-clubs" ? ["#3B82F6", "#60A5FA"] : ["#F8F9FA", "#FFFFFF"]}
+            style={styles.tabGradient}
+          >
+            <Text style={[styles.tabText, activeTab === "my-clubs" && styles.activeTabText]}>Mes Clubs</Text>
+          </LinearGradient>
         </TouchableOpacity>
       </View>
 
       {/* Content */}
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.primary} />
+          <LinearGradient colors={["#EBF4FF", "#DBEAFE"]} style={styles.loadingCard}>
+            <ActivityIndicator size="large" color="#3B82F6" />
+            <Text style={styles.loadingText}>Chargement...</Text>
+          </LinearGradient>
         </View>
       ) : error ? (
         <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>Erreur : {error}</Text>
+          <LinearGradient colors={["#FEF2F2", "#FEE2E2"]} style={styles.errorCard}>
+            <Text style={styles.errorText}>❌ Erreur : {error}</Text>
+          </LinearGradient>
         </View>
       ) : (
         <>
@@ -624,81 +643,92 @@ export default function CommunityScreen() {
       {/* Modal pour créer un club */}
       <Modal visible={showCreateModal} animationType="slide" transparent={true}>
         <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
+          <LinearGradient colors={["#FFFFFF", "#F8F9FA"]} style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Créer un nouveau club</Text>
-              <TouchableOpacity onPress={() => setShowCreateModal(false)}>
-                <X size={24} color={Colors.black} />
+              <Text style={styles.modalTitle}>✨ Créer un nouveau club</Text>
+              <TouchableOpacity onPress={() => setShowCreateModal(false)} activeOpacity={0.8}>
+                <LinearGradient colors={["#F3F4F6", "#E5E7EB"]} style={styles.closeButton}>
+                  <X size={20} color="#6B7280" />
+                </LinearGradient>
               </TouchableOpacity>
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false}>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="Nom du club"
-                value={newClubName}
-                onChangeText={setNewClubName}
-                placeholderTextColor={Colors.gray}
-              />
+              <LinearGradient colors={["#F8F9FA", "#FFFFFF"]} style={styles.modalInput}>
+                <TextInput
+                  placeholder="Nom du club"
+                  value={newClubName}
+                  onChangeText={setNewClubName}
+                  placeholderTextColor="#9CA3AF"
+                  style={styles.inputText}
+                />
+              </LinearGradient>
 
-              <TextInput
-                style={styles.modalInput}
-                placeholder="Domaine (ex: Technologie)"
-                value={newClubDomain}
-                onChangeText={setNewClubDomain}
-                placeholderTextColor={Colors.gray}
-              />
+              <LinearGradient colors={["#F8F9FA", "#FFFFFF"]} style={styles.modalInput}>
+                <TextInput
+                  placeholder="Domaine (ex: Technologie)"
+                  value={newClubDomain}
+                  onChangeText={setNewClubDomain}
+                  placeholderTextColor="#9CA3AF"
+                  style={styles.inputText}
+                />
+              </LinearGradient>
 
-              <TextInput
-                style={[styles.modalInput, styles.textArea]}
-                placeholder="Description"
-                value={newClubDescription}
-                onChangeText={setNewClubDescription}
-                multiline
-                numberOfLines={4}
-                textAlignVertical="top"
-                placeholderTextColor={Colors.gray}
-              />
+              <LinearGradient colors={["#F8F9FA", "#FFFFFF"]} style={[styles.modalInput, styles.textArea]}>
+                <TextInput
+                  placeholder="Description"
+                  value={newClubDescription}
+                  onChangeText={setNewClubDescription}
+                  multiline
+                  numberOfLines={4}
+                  textAlignVertical="top"
+                  placeholderTextColor="#9CA3AF"
+                  style={styles.inputText}
+                />
+              </LinearGradient>
 
-              <TouchableOpacity style={styles.imagePickerButton} onPress={pickImage}>
-                <Text style={styles.imagePickerText}>{newClubAvatar ? "Image sélectionnée" : "Choisir un avatar"}</Text>
+              <TouchableOpacity onPress={pickImage} activeOpacity={0.8}>
+                <LinearGradient colors={["#EBF4FF", "#DBEAFE"]} style={styles.imagePickerButton}>
+                  <Text style={styles.imagePickerText}>
+                    {newClubAvatar ? "📷 Image sélectionnée" : "📷 Choisir un avatar"}
+                  </Text>
+                </LinearGradient>
               </TouchableOpacity>
 
               {newClubAvatar && <Image source={{ uri: newClubAvatar }} style={styles.avatarPreview} />}
             </ScrollView>
 
             <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => setShowCreateModal(false)}
-                disabled={creatingClub}
-              >
-                <Text style={styles.cancelButtonText}>Annuler</Text>
+              <TouchableOpacity onPress={() => setShowCreateModal(false)} disabled={creatingClub} activeOpacity={0.8}>
+                <LinearGradient colors={["#F3F4F6", "#E5E7EB"]} style={styles.modalButton}>
+                  <Text style={styles.cancelButtonText}>Annuler</Text>
+                </LinearGradient>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.createButton]}
-                onPress={createClub}
-                disabled={creatingClub}
-              >
-                {creatingClub ? (
-                  <ActivityIndicator size="small" color={Colors.white} />
-                ) : (
-                  <Text style={styles.createButtonText}>Créer</Text>
-                )}
+
+              <TouchableOpacity onPress={createClub} disabled={creatingClub} activeOpacity={0.8}>
+                <LinearGradient colors={["#10B981", "#34D399"]} style={styles.modalButton}>
+                  {creatingClub ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.createButtonText}>Créer</Text>
+                  )}
+                </LinearGradient>
               </TouchableOpacity>
             </View>
-          </View>
+          </LinearGradient>
         </View>
       </Modal>
 
       {/* Modal des notifications */}
       <Modal visible={showNotifications} animationType="slide" transparent={true}>
         <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
+          <LinearGradient colors={["#FFFFFF", "#F8F9FA"]} style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Notifications</Text>
-              <TouchableOpacity onPress={() => setShowNotifications(false)}>
-                <X size={24} color={Colors.black} />
+              <Text style={styles.modalTitle}>🔔 Notifications</Text>
+              <TouchableOpacity onPress={() => setShowNotifications(false)} activeOpacity={0.8}>
+                <LinearGradient colors={["#F3F4F6", "#E5E7EB"]} style={styles.closeButton}>
+                  <X size={20} color="#6B7280" />
+                </LinearGradient>
               </TouchableOpacity>
             </View>
 
@@ -707,30 +737,36 @@ export default function CommunityScreen() {
                 data={notifications}
                 keyExtractor={(item) => item.id}
                 renderItem={({ item }) => (
-                  <TouchableOpacity style={styles.notificationItem} onPress={() => handleNotificationClick(item)}>
-                    <Text style={styles.notificationMessage}>{item.message}</Text>
-                    <Text style={styles.notificationDate}>{new Date(item.created_at).toLocaleDateString("fr-FR")}</Text>
-                    <Text style={styles.notificationType}>Type: {item.type}</Text>
+                  <TouchableOpacity onPress={() => handleNotificationClick(item)} activeOpacity={0.8}>
+                    <LinearGradient colors={["#EBF4FF", "#DBEAFE"]} style={styles.notificationItem}>
+                      <Text style={styles.notificationMessage}>{item.message}</Text>
+                      <Text style={styles.notificationDate}>
+                        📅 {new Date(item.created_at).toLocaleDateString("fr-FR")}
+                      </Text>
+                      <Text style={styles.notificationType}>🏷️ {item.type}</Text>
+                    </LinearGradient>
                   </TouchableOpacity>
                 )}
               />
             ) : (
               <View style={styles.emptyNotifications}>
-                <Text style={styles.emptyNotificationsText}>Aucune notification</Text>
+                <Text style={styles.emptyNotificationsText}>📭 Aucune notification</Text>
               </View>
             )}
-          </View>
+          </LinearGradient>
         </View>
       </Modal>
 
       {/* Modal des demandes d'adhésion */}
       <Modal visible={showRequestsModal} animationType="slide" transparent={true}>
         <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
+          <LinearGradient colors={["#FFFFFF", "#F8F9FA"]} style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Demandes d'adhésion</Text>
-              <TouchableOpacity onPress={() => setShowRequestsModal(false)}>
-                <X size={24} color={Colors.black} />
+              <Text style={styles.modalTitle}>👥 Demandes d'adhésion</Text>
+              <TouchableOpacity onPress={() => setShowRequestsModal(false)} activeOpacity={0.8}>
+                <LinearGradient colors={["#F3F4F6", "#E5E7EB"]} style={styles.closeButton}>
+                  <X size={20} color="#6B7280" />
+                </LinearGradient>
               </TouchableOpacity>
             </View>
 
@@ -743,10 +779,10 @@ export default function CommunityScreen() {
               />
             ) : (
               <View style={styles.emptyNotifications}>
-                <Text style={styles.emptyNotificationsText}>Aucune demande en attente</Text>
+                <Text style={styles.emptyNotificationsText}>📭 Aucune demande en attente</Text>
               </View>
             )}
-          </View>
+          </LinearGradient>
         </View>
       </Modal>
     </SafeAreaView>
@@ -756,146 +792,154 @@ export default function CommunityScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: "#F8FAFF",
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.lightGray,
-    backgroundColor: Colors.white,
+    paddingVertical: 10,
+    borderBottomWidth: 0.5,
+    borderBottomColor: "#E5E7EB",
   },
   searchContainer: {
     flex: 1,
+    marginRight: 8,
+  },
+  searchInputContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Colors.background,
-    borderRadius: 8,
+    borderRadius: 20,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: "#E9ECEF",
   },
   searchInput: {
     flex: 1,
     marginLeft: 8,
-    color: Colors.black,
-    fontSize: 16,
+    color: "#1F2937",
+    fontSize: 14,
   },
   notificationButton: {
-    marginLeft: 12,
-    width: 40,
-    height: 40,
+    marginRight: 8,
+  },
+  requestsButton: {
+    marginRight: 8,
+  },
+  iconButtonGradient: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     justifyContent: "center",
     alignItems: "center",
     position: "relative",
   },
   notificationBadge: {
     position: "absolute",
-    top: 5,
-    right: 5,
-    backgroundColor: Colors.danger,
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
+    top: -2,
+    right: -2,
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
     justifyContent: "center",
     alignItems: "center",
   },
   notificationBadgeText: {
-    color: Colors.white,
-    fontSize: 12,
+    color: "#FFFFFF",
+    fontSize: 10,
     fontWeight: "bold",
-  },
-  requestsButton: {
-    marginLeft: 12,
-    width: 40,
-    height: 40,
-    justifyContent: "center",
-    alignItems: "center",
-    position: "relative",
   },
   requestsBadge: {
     position: "absolute",
-    top: 5,
-    right: 5,
-    backgroundColor: Colors.warning,
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
+    top: -2,
+    right: -2,
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
     justifyContent: "center",
     alignItems: "center",
   },
   requestsBadgeText: {
-    color: Colors.white,
-    fontSize: 12,
+    color: "#FFFFFF",
+    fontSize: 10,
     fontWeight: "bold",
   },
   createButton: {
-    marginLeft: 12,
-    width: 40,
-    height: 40,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: Colors.primary,
-    borderRadius: 8,
   },
   tabsContainer: {
     flexDirection: "row",
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.lightGray,
-    backgroundColor: Colors.white,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 0.5,
+    borderBottomColor: "#E5E7EB",
   },
   tab: {
     flex: 1,
-    paddingVertical: 12,
-    alignItems: "center",
+    marginHorizontal: 2,
   },
-  activeTab: {
-    borderBottomWidth: 2,
-    borderBottomColor: Colors.primary,
+  tabGradient: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#E9ECEF",
   },
   tabText: {
-    fontSize: 16,
-    color: Colors.gray,
+    fontSize: 12,
+    color: "#6B7280",
+    fontWeight: "500",
   },
   activeTabText: {
-    color: Colors.primary,
+    color: "#FFFFFF",
     fontWeight: "600",
   },
   clubsList: {
     padding: 16,
   },
   clubCard: {
+    marginBottom: 12,
+    borderRadius: 16,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  clubCardGradient: {
     flexDirection: "row",
     alignItems: "flex-start",
-    backgroundColor: Colors.white,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: Colors.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#F0F0F0",
+    borderRadius: 16,
   },
   clubAvatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     marginRight: 12,
   },
   clubInfo: {
     flex: 1,
   },
   clubName: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "600",
-    color: Colors.black,
+    color: "#1F2937",
     marginBottom: 2,
   },
   clubDomain: {
-    fontSize: 14,
-    color: Colors.gray,
+    fontSize: 11,
+    color: "#6B7280",
     marginBottom: 4,
   },
   clubMembersContainer: {
@@ -904,52 +948,66 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   clubMembers: {
-    fontSize: 12,
-    color: Colors.gray,
+    fontSize: 10,
+    color: "#6B7280",
     marginLeft: 4,
   },
   clubDescription: {
-    fontSize: 12,
-    color: Colors.darkGray,
+    fontSize: 11,
+    color: "#374151",
     lineHeight: 16,
   },
+  clubActions: {
+    alignItems: "flex-end",
+    gap: 4,
+  },
   joinButton: {
-    backgroundColor: Colors.primary,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    marginLeft: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 12,
   },
   joinButtonText: {
-    color: Colors.white,
+    color: "#FFFFFF",
     fontWeight: "600",
-    fontSize: 14,
+    fontSize: 11,
   },
-  pendingButton: {
-    backgroundColor: Colors.warning,
+  chatButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    gap: 4,
   },
-  pendingButtonText: {
-    color: Colors.white,
+  chatButtonText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "600",
   },
   feedList: {
     padding: 16,
   },
   feedItem: {
-    flexDirection: "row",
-    backgroundColor: Colors.white,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: Colors.black,
+    marginBottom: 12,
+    borderRadius: 16,
+    overflow: "hidden",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.05,
     shadowRadius: 4,
-    elevation: 2,
+    elevation: 3,
+  },
+  feedItemGradient: {
+    flexDirection: "row",
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#F0F0F0",
+    borderRadius: 16,
   },
   feedItemIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
@@ -958,14 +1016,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   feedItemTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "600",
-    color: Colors.black,
+    color: "#1F2937",
     marginBottom: 2,
   },
   feedItemClub: {
-    fontSize: 14,
-    color: Colors.primary,
+    fontSize: 11,
+    color: "#3B82F6",
     marginBottom: 4,
   },
   feedItemDetails: {
@@ -974,75 +1032,108 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   feedItemDate: {
-    fontSize: 12,
-    color: Colors.gray,
+    fontSize: 10,
+    color: "#6B7280",
   },
   feedItemParticipants: {
     flexDirection: "row",
     alignItems: "center",
   },
   feedItemParticipantsText: {
-    fontSize: 12,
-    color: Colors.gray,
+    fontSize: 10,
+    color: "#6B7280",
     marginLeft: 4,
   },
   emptyState: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
+    padding: 32,
+  },
+  emptyStateCard: {
+    alignItems: "center",
     padding: 24,
+    borderRadius: 20,
+    shadowColor: "#3B82F6",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   emptyStateTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "600",
-    color: Colors.black,
-    marginTop: 16,
-    marginBottom: 8,
+    color: "#1F2937",
+    marginTop: 12,
+    marginBottom: 6,
   },
   emptyStateSubtitle: {
-    fontSize: 14,
-    color: Colors.gray,
-    marginBottom: 24,
+    fontSize: 12,
+    color: "#6B7280",
+    marginBottom: 16,
     textAlign: "center",
   },
   emptyStateButton: {
-    backgroundColor: Colors.primary,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 16,
   },
   emptyStateButtonText: {
-    color: Colors.white,
+    color: "#FFFFFF",
     fontWeight: "600",
+    fontSize: 12,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    padding: 32,
+  },
+  loadingCard: {
+    alignItems: "center",
+    padding: 24,
+    borderRadius: 20,
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: "#1F2937",
+    fontWeight: "500",
   },
   errorContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: 16,
+    padding: 32,
+  },
+  errorCard: {
+    alignItems: "center",
+    padding: 24,
+    borderRadius: 20,
   },
   errorText: {
-    color: Colors.danger,
-    fontSize: 16,
+    color: "#EF4444",
+    fontSize: 14,
     textAlign: "center",
+    fontWeight: "500",
   },
   modalContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "rgba(0, 0, 0, 0.5)",
+    padding: 16,
   },
   modalContent: {
-    backgroundColor: Colors.white,
-    borderRadius: 12,
+    borderRadius: 20,
     padding: 20,
-    width: "90%",
+    width: "100%",
     maxHeight: "80%",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 10,
   },
   modalHeader: {
     flexDirection: "row",
@@ -1051,37 +1142,48 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "600",
-    color: Colors.black,
+    color: "#1F2937",
+  },
+  closeButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
   },
   modalInput: {
-    borderWidth: 1,
-    borderColor: Colors.lightGray,
-    borderRadius: 8,
+    borderRadius: 12,
     padding: 12,
     marginBottom: 12,
-    fontSize: 16,
-    color: Colors.black,
+    borderWidth: 1,
+    borderColor: "#E9ECEF",
+  },
+  inputText: {
+    fontSize: 14,
+    color: "#1F2937",
   },
   textArea: {
-    height: 80,
+    minHeight: 80,
   },
   imagePickerButton: {
-    backgroundColor: Colors.background,
-    borderRadius: 8,
+    borderRadius: 12,
     padding: 12,
     alignItems: "center",
     marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#3B82F6",
   },
   imagePickerText: {
-    color: Colors.black,
-    fontSize: 16,
+    color: "#3B82F6",
+    fontSize: 14,
+    fontWeight: "500",
   },
   avatarPreview: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     alignSelf: "center",
     marginBottom: 12,
   },
@@ -1089,113 +1191,107 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     marginTop: 16,
+    gap: 12,
   },
   modalButton: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
+    paddingVertical: 10,
+    borderRadius: 12,
     alignItems: "center",
   },
-  cancelButton: {
-    backgroundColor: Colors.lightGray,
-    marginRight: 8,
-  },
   cancelButtonText: {
-    color: Colors.darkGray,
+    color: "#6B7280",
     fontWeight: "600",
+    fontSize: 14,
   },
   createButtonText: {
-    color: Colors.white,
+    color: "#FFFFFF",
     fontWeight: "600",
+    fontSize: 14,
   },
   notificationItem: {
     padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.lightGray,
+    borderRadius: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: "#3B82F6",
   },
   notificationMessage: {
-    fontSize: 14,
-    color: Colors.black,
+    fontSize: 12,
+    color: "#1F2937",
     marginBottom: 4,
+    fontWeight: "500",
   },
   notificationDate: {
-    fontSize: 12,
-    color: Colors.gray,
-  },
-  emptyNotifications: {
-    padding: 24,
-    alignItems: "center",
-  },
-  emptyNotificationsText: {
-    fontSize: 16,
-    color: Colors.gray,
-  },
-  chatButton: {
-    backgroundColor: Colors.success,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 6,
-    marginLeft: 8,
-    marginTop: 8,
+    fontSize: 10,
+    color: "#6B7280",
   },
   notificationType: {
     fontSize: 10,
-    color: Colors.gray,
+    color: "#6B7280",
     marginTop: 2,
   },
+  emptyNotifications: {
+    padding: 32,
+    alignItems: "center",
+  },
+  emptyNotificationsText: {
+    fontSize: 14,
+    color: "#6B7280",
+    fontWeight: "500",
+  },
   requestCard: {
+    marginBottom: 12,
+    borderRadius: 16,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  requestCardGradient: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: Colors.white,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: Colors.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#F0F0F0",
+    borderRadius: 16,
   },
   memberAvatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     marginRight: 12,
   },
   requestInfo: {
     flex: 1,
   },
   memberName: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "600",
-    color: Colors.black,
+    color: "#1F2937",
     marginBottom: 2,
   },
   requestMessage: {
-    fontSize: 12,
-    color: Colors.darkGray,
+    fontSize: 11,
+    color: "#374151",
     fontStyle: "italic",
     marginBottom: 4,
   },
   requestDate: {
-    fontSize: 12,
-    color: Colors.gray,
+    fontSize: 10,
+    color: "#6B7280",
   },
   actionButtons: {
     flexDirection: "row",
+    gap: 6,
   },
   actionButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     justifyContent: "center",
     alignItems: "center",
-    marginLeft: 8,
-  },
-  acceptButton: {
-    backgroundColor: Colors.success,
-  },
-  rejectButton: {
-    backgroundColor: Colors.danger,
   },
 })

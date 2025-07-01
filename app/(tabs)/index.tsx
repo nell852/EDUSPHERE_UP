@@ -12,8 +12,7 @@ import {
   Dimensions,
 } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
-import { LinearGradient } from 'expo-linear-gradient';
-
+import { LinearGradient } from "expo-linear-gradient"
 import { MessageCircle, X, Send, Search, BookOpen, BarChart3, History } from "lucide-react-native"
 import { useState, useEffect } from "react"
 import { useRouter } from "expo-router"
@@ -32,6 +31,7 @@ export default function HomeScreen() {
   const [books, setBooks] = useState<any[]>([])
   const [filteredBooks, setFilteredBooks] = useState<any[]>([])
   const [readingHistory, setReadingHistory] = useState<any[]>([])
+
   const router = useRouter()
 
   useEffect(() => {
@@ -41,10 +41,12 @@ export default function HomeScreen() {
           data: { user },
           error,
         } = await supabase.auth.getUser()
+
         if (error) {
           console.error("Erreur lors de la récupération de l'utilisateur:", error.message)
           return
         }
+
         if (user) {
           const name = user.user_metadata?.full_name || user.email?.split("@")[0] || "Utilisateur"
           setUserName(name)
@@ -57,10 +59,12 @@ export default function HomeScreen() {
     const fetchBooks = async () => {
       try {
         const { data, error } = await supabase.from("livres").select("*").order("created_at", { ascending: false })
+
         if (error) {
           console.error("Erreur récupération livres:", error.message)
           return
         }
+
         setBooks(data || [])
         setFilteredBooks(data || [])
       } catch (error) {
@@ -95,8 +99,8 @@ export default function HomeScreen() {
         domaine: "informatique",
       },
     ]
-    setReadingHistory(mockHistory)
 
+    setReadingHistory(mockHistory)
     fetchUser()
     fetchBooks()
   }, [])
@@ -116,27 +120,48 @@ export default function HomeScreen() {
     }
   }, [searchQuery, books])
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!inputText.trim()) return
 
     const userMessage = { text: inputText, isUser: true }
     setMessages((prev) => [...prev, userMessage])
 
-    let botResponse = "Désolé, je ne comprends pas votre demande. Essayez 'résumé de [titre]' ou 'infos sur [titre]'."
-    const queryLower = inputText.toLowerCase()
+    try {
+      // Appel à l'API de Gemini
+      const response = await fetch(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=AIzaSyBOx6RTLImCCg4lGTVu0xF0oCqu-K-CJ0M",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  {
+                    text: inputText,
+                  },
+                ],
+              },
+            ],
+          }),
+        },
+      )
 
-    const book = books.find((b) => queryLower.includes(b.titre.toLowerCase()))
-    if (book) {
-      if (queryLower.includes("résumé") || queryLower.includes("summary")) {
-        botResponse = `Résumé de "${book.titre}": Ce livre traite de ${book.domaine}. Il est écrit par ${book.auteur} et est populaire avec ${book.popularite} vues.`
-      } else if (queryLower.includes("infos") || queryLower.includes("information")) {
-        botResponse = `Infos sur "${book.titre}": Auteur: ${book.auteur}, Domaine: ${book.domaine}, Popularité: ${book.popularite}.`
+      const data = await response.json()
+
+      if (response.ok && data.candidates && data.candidates[0]?.content?.parts[0]?.text) {
+        const botResponse = data.candidates[0].content.parts[0].text
+        setMessages((prev) => [...prev, { text: botResponse, isUser: false }])
+      } else {
+        throw new Error(data.error?.message || "Erreur lors de la récupération de la réponse de l'API Gemini")
       }
+    } catch (error) {
+      console.error("Erreur API Gemini:", error)
+      const errorMessage = "Désolé, une erreur s'est produite. Veuillez réessayer plus tard."
+      setMessages((prev) => [...prev, { text: errorMessage, isUser: false }])
     }
-
-    setTimeout(() => {
-      setMessages((prev) => [...prev, { text: botResponse, isUser: false }])
-    }, 500)
 
     setInputText("")
   }
@@ -169,8 +194,8 @@ export default function HomeScreen() {
   }
 
   const renderCategoryItem = ({ item }: { item: any }) => (
-    <TouchableOpacity style={styles.categoryItem} activeOpacity={0.8} onPress={() => router.push("/library")}>
-      <LinearGradient colors={["#FFD700", "#FFA500", "#FF8C00"]} style={styles.categoryGradient}>
+    <TouchableOpacity style={styles.categoryItem} activeOpacity={0.8} onPress={() => router.push("./librairie")}>
+      <LinearGradient colors={["#3B82F6", "#60A5FA", "#93C5FD"]} style={styles.categoryGradient}>
         <View style={styles.categoryImageContainer}>
           <Image
             source={{ uri: item.couverture_url || "https://via.placeholder.com/60x60" }}
@@ -185,7 +210,7 @@ export default function HomeScreen() {
   )
 
   const renderRecentBook = ({ item }: { item: any }) => (
-    <TouchableOpacity style={styles.recentBookCard} activeOpacity={0.8} onPress={() => router.push("/library")}>
+    <TouchableOpacity style={styles.recentBookCard} activeOpacity={0.8} onPress={() => router.push("./librairie")}>
       <Image
         source={{ uri: item.couverture_url || "https://via.placeholder.com/60x80" }}
         style={styles.recentBookImage}
@@ -206,7 +231,7 @@ export default function HomeScreen() {
   )
 
   const renderHistoryItem = ({ item }: { item: any }) => (
-    <TouchableOpacity style={styles.historyCard} activeOpacity={0.8} onPress={() => router.push("/library")}>
+    <TouchableOpacity style={styles.historyCard} activeOpacity={0.8} onPress={() => router.push("./librairie")}>
       <Image
         source={{ uri: item.couverture_url || "https://via.placeholder.com/50x70" }}
         style={styles.historyBookImage}
@@ -221,7 +246,7 @@ export default function HomeScreen() {
         <Text style={styles.historyBookTime}>Ouvert le {new Date(item.opened_at).toLocaleDateString("fr-FR")}</Text>
       </View>
       <View style={styles.historyIcon}>
-        <History size={16} color="#FFD700" />
+        <History size={16} color="#3B82F6" />
       </View>
     </TouchableOpacity>
   )
@@ -237,16 +262,13 @@ export default function HomeScreen() {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.logoContainer}>
-          {/* LIGNE À MODIFIER POUR VOTRE LOGO : Remplacez le source par votre logo */}
-          <Image
-            source={require('../../assets/images/edusphere-logo.png')}
-            style={styles.logo}
-            resizeMode="contain"
-          />
+          <Image source={require("../../assets/images/logo.png")} style={styles.logo} resizeMode="contain" />
         </View>
         <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.headerButton} onPress={() => setChatVisible(true)}>
-            <MessageCircle size={24} color="#333" />
+          <TouchableOpacity style={styles.chatIconButton} onPress={() => setChatVisible(true)} activeOpacity={0.8}>
+            <LinearGradient colors={["#3B82F6", "#60A5FA"]} style={styles.chatIconGradient}>
+              <MessageCircle size={20} color="#FFFFFF" />
+            </LinearGradient>
           </TouchableOpacity>
         </View>
       </View>
@@ -254,20 +276,20 @@ export default function HomeScreen() {
       {/* Search */}
       <View style={styles.searchContainer}>
         <View style={styles.searchInputContainer}>
-          <Search size={16} color="#999" style={styles.searchIcon} />
+          <Search size={16} color="#9CA3AF" style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
             placeholder="Rechercher des livres..."
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholderTextColor="#999"
+            placeholderTextColor="#9CA3AF"
           />
         </View>
       </View>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {/* Welcome */}
-        <LinearGradient colors={["#FFF8DC", "#FFFACD", "#FFFFFF"]} style={styles.welcomeSection}>
+        <LinearGradient colors={["#EBF4FF", "#DBEAFE", "#FFFFFF"]} style={styles.welcomeSection}>
           <Text style={styles.welcomeTitle}>Salut {userName} ! 👋</Text>
           <Text style={styles.welcomeSubtitle}>Prêt à explorer de nouveaux horizons ?</Text>
         </LinearGradient>
@@ -287,7 +309,7 @@ export default function HomeScreen() {
 
         {/* Stats Section (dynamiques) */}
         <View style={styles.statsSection}>
-          <LinearGradient colors={["#FFD700", "#FFA500"]} style={styles.statsCard}>
+          <LinearGradient colors={["#3B82F6", "#60A5FA"]} style={styles.statsCard}>
             <View style={styles.statRow}>
               <View style={styles.statColumn}>
                 <BookOpen size={24} color="#FFF" />
@@ -300,7 +322,6 @@ export default function HomeScreen() {
                 <Text style={styles.statLabel}>Catégories</Text>
               </View>
             </View>
-            {/* Détail des catégories */}
             <View style={styles.categoryStatsContainer}>
               <Text style={styles.categoryStatsTitle}>Répartition par domaine :</Text>
               <View style={styles.categoryStatsList}>
@@ -320,7 +341,7 @@ export default function HomeScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>🆕 Nouveautés</Text>
-            <TouchableOpacity onPress={() => router.push("/library")}>
+            <TouchableOpacity onPress={() => router.push("./librairie")}>
               <Text style={styles.seeAllText}>Voir tout</Text>
             </TouchableOpacity>
           </View>
@@ -333,7 +354,7 @@ export default function HomeScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>📚 Historique de lecture</Text>
-            <TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push("./librairie")}>
               <Text style={styles.seeAllText}>Voir tout</Text>
             </TouchableOpacity>
           </View>
@@ -346,13 +367,13 @@ export default function HomeScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>💡 Recommandé pour vous</Text>
           <View style={styles.recommendationCard}>
-            <LinearGradient colors={["#FFF8DC", "#FFFACD"]} style={styles.recommendationGradient}>
+            <LinearGradient colors={["#EBF4FF", "#DBEAFE"]} style={styles.recommendationGradient}>
               <Text style={styles.recommendationTitle}>Continuez votre apprentissage</Text>
               <Text style={styles.recommendationText}>
                 Basé sur vos lectures récentes, nous vous recommandons d'explorer les domaines de programmation et
                 d'intelligence artificielle.
               </Text>
-              <TouchableOpacity style={styles.recommendationButton} onPress={() => router.push("/library")}>
+              <TouchableOpacity style={styles.recommendationButton} onPress={() => router.push("./librairie")}>
                 <Text style={styles.recommendationButtonText}>Explorer maintenant</Text>
               </TouchableOpacity>
             </LinearGradient>
@@ -368,7 +389,7 @@ export default function HomeScreen() {
                 key={String(index)}
                 style={styles.searchResultCard}
                 activeOpacity={0.8}
-                onPress={() => router.push("/library")}
+                onPress={() => router.push("./librairie")}
               >
                 <Image
                   source={{ uri: book.couverture_url || "https://via.placeholder.com/50x70" }}
@@ -394,9 +415,9 @@ export default function HomeScreen() {
       {/* Chat Modal */}
       {chatVisible && (
         <View style={styles.chatModal}>
-          <LinearGradient colors={["#FFD700", "#FFA500"]} style={styles.chatHeaderGradient}>
+          <LinearGradient colors={["#3B82F6", "#60A5FA"]} style={styles.chatHeaderGradient}>
             <View style={styles.chatHeader}>
-              <Text style={styles.chatTitle}>Assistant Edusphere</Text>
+              <Text style={styles.chatTitle}>Assistant Edusphere (Gemini)</Text>
               <TouchableOpacity onPress={() => setChatVisible(false)} style={styles.closeButton}>
                 <X color="#FFF" size={24} />
               </TouchableOpacity>
@@ -407,7 +428,8 @@ export default function HomeScreen() {
             {messages.length === 0 && (
               <View style={styles.chatWelcome}>
                 <Text style={styles.chatWelcomeText}>
-                  👋 Salut ! Je suis votre assistant Edusphere. Demandez-moi des infos sur vos livres préférés !
+                  👋 Salut ! Je suis votre assistant Edusphere, alimenté par Gemini. Posez-moi n'importe quelle question
+                  !
                 </Text>
               </View>
             )}
@@ -429,7 +451,7 @@ export default function HomeScreen() {
               value={inputText}
               onChangeText={setInputText}
               placeholder="Tapez votre message..."
-              placeholderTextColor="#999"
+              placeholderTextColor="#9CA3AF"
               multiline
               maxLength={200}
             />
@@ -439,7 +461,7 @@ export default function HomeScreen() {
               disabled={!inputText.trim()}
             >
               <LinearGradient
-                colors={inputText.trim() ? ["#FFD700", "#FFA500"] : ["#DDD", "#CCC"]}
+                colors={inputText.trim() ? ["#3B82F6", "#60A5FA"] : ["#DDD", "#CCC"]}
                 style={styles.sendButtonGradient}
               >
                 <Send color="#FFF" size={16} />
@@ -455,17 +477,17 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#FAFAFA",
+    backgroundColor: "#F8FAFF",
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     backgroundColor: "#FFF",
     borderBottomWidth: 0.5,
-    borderBottomColor: "#E0E0E0",
+    borderBottomColor: "#E5E7EB",
   },
   logoContainer: {
     flex: 1,
@@ -478,31 +500,49 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
-  headerButton: {
-    padding: 4,
+  chatIconButton: {
+    borderRadius: 20,
+    overflow: "hidden",
+    shadowColor: "#3B82F6",
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  chatIconGradient: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
   },
   searchContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     backgroundColor: "#FFF",
     borderBottomWidth: 0.5,
-    borderBottomColor: "#E0E0E0",
+    borderBottomColor: "#E5E7EB",
   },
   searchInputContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F5F5F5",
+    backgroundColor: "#F8F9FA",
     borderRadius: 25,
     paddingHorizontal: 16,
     paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: "#E9ECEF",
   },
   searchIcon: {
     marginRight: 8,
   },
   searchInput: {
     flex: 1,
-    fontSize: 16,
-    color: "#333",
+    fontSize: 14,
+    color: "#1F2937",
   },
   scrollView: {
     flex: 1,
@@ -510,34 +550,34 @@ const styles = StyleSheet.create({
   welcomeSection: {
     marginHorizontal: 20,
     marginTop: 16,
-    padding: 24,
+    padding: 16,
     borderRadius: 20,
-    shadowColor: "#FFD700",
+    shadowColor: "#3B82F6",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 4,
   },
   welcomeTitle: {
-    fontSize: 22,
+    fontSize: 16,
     fontWeight: "700",
-    color: "#333",
+    color: "#1F2937",
     marginBottom: 4,
   },
   welcomeSubtitle: {
-    fontSize: 16,
-    color: "#666",
+    fontSize: 12,
+    color: "#6B7280",
     lineHeight: 22,
   },
   categoriesSection: {
-    paddingVertical: 20,
+    paddingVertical: 16,
     backgroundColor: "#FFF",
     marginTop: 16,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 14,
     fontWeight: "600",
-    color: "#333",
+    color: "#1F2937",
     paddingHorizontal: 20,
     marginBottom: 16,
   },
@@ -566,22 +606,22 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: "#F5F5F5",
+    backgroundColor: "#F8F9FA",
   },
   categoryText: {
     fontSize: 12,
-    color: "#333",
+    color: "#1F2937",
     textAlign: "center",
     fontWeight: "500",
   },
   statsSection: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
   statsCard: {
     borderRadius: 16,
-    padding: 20,
-    shadowColor: "#FFD700",
+    padding: 16,
+    shadowColor: "#3B82F6",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
@@ -596,7 +636,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   statNumber: {
-    fontSize: 24,
+    fontSize: 18,
     fontWeight: "bold",
     color: "#FFF",
     marginTop: 8,
@@ -630,7 +670,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   section: {
-    paddingVertical: 16,
+    paddingVertical: 12,
     backgroundColor: "#FFF",
     marginTop: 16,
   },
@@ -638,21 +678,21 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 20,
-    marginBottom: 16,
+    paddingHorizontal: 16,
+    marginBottom: 12,
   },
   seeAllText: {
     fontSize: 14,
-    color: "#FFD700",
+    color: "#3B82F6",
     fontWeight: "500",
   },
   recentBookCard: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#FFF",
-    marginHorizontal: 20,
+    marginHorizontal: 16,
     marginBottom: 12,
-    padding: 16,
+    padding: 12,
     borderRadius: 12,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
@@ -664,31 +704,31 @@ const styles = StyleSheet.create({
     width: 50,
     height: 70,
     borderRadius: 8,
-    backgroundColor: "#F5F5F5",
+    backgroundColor: "#F8F9FA",
     marginRight: 16,
   },
   recentBookInfo: {
     flex: 1,
   },
   recentBookTitle: {
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: "600",
-    color: "#333",
+    color: "#1F2937",
     marginBottom: 4,
     lineHeight: 20,
   },
   recentBookAuthor: {
-    fontSize: 14,
-    color: "#666",
+    fontSize: 11,
+    color: "#6B7280",
     marginBottom: 4,
   },
   recentBookCategory: {
-    fontSize: 13,
-    color: "#FFD700",
+    fontSize: 10,
+    color: "#3B82F6",
     fontWeight: "500",
   },
   recentBookBadge: {
-    backgroundColor: "#4CAF50",
+    backgroundColor: "#10B981",
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
@@ -702,9 +742,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#FFF",
-    marginHorizontal: 20,
+    marginHorizontal: 16,
     marginBottom: 12,
-    padding: 16,
+    padding: 12,
     borderRadius: 12,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
@@ -712,33 +752,33 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
     borderLeftWidth: 3,
-    borderLeftColor: "#FFD700",
+    borderLeftColor: "#3B82F6",
   },
   historyBookImage: {
     width: 45,
     height: 60,
     borderRadius: 6,
-    backgroundColor: "#F5F5F5",
+    backgroundColor: "#F8F9FA",
     marginRight: 16,
   },
   historyBookInfo: {
     flex: 1,
   },
   historyBookTitle: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: "600",
-    color: "#333",
+    color: "#1F2937",
     marginBottom: 4,
     lineHeight: 18,
   },
   historyBookAuthor: {
-    fontSize: 13,
-    color: "#666",
+    fontSize: 11,
+    color: "#6B7280",
     marginBottom: 4,
   },
   historyBookTime: {
     fontSize: 12,
-    color: "#999",
+    color: "#9CA3AF",
   },
   historyIcon: {
     padding: 8,
@@ -757,62 +797,62 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
     borderWidth: 1,
-    borderColor: "#FFD700",
+    borderColor: "#3B82F6",
   },
   searchResultImage: {
     width: 45,
     height: 60,
     borderRadius: 6,
-    backgroundColor: "#F5F5F5",
+    backgroundColor: "#F8F9FA",
     marginRight: 16,
   },
   searchResultInfo: {
     flex: 1,
   },
   searchResultTitle: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: "600",
-    color: "#333",
+    color: "#1F2937",
     marginBottom: 4,
     lineHeight: 18,
   },
   searchResultAuthor: {
-    fontSize: 13,
-    color: "#666",
+    fontSize: 11,
+    color: "#6B7280",
     marginBottom: 4,
   },
   searchResultCategory: {
     fontSize: 12,
-    color: "#FFD700",
+    color: "#3B82F6",
     fontWeight: "500",
   },
   recommendationCard: {
-    marginHorizontal: 20,
+    marginHorizontal: 16,
     borderRadius: 16,
     overflow: "hidden",
-    shadowColor: "#FFD700",
+    shadowColor: "#3B82F6",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 4,
   },
   recommendationGradient: {
-    padding: 20,
+    padding: 16,
   },
   recommendationTitle: {
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: "600",
-    color: "#333",
+    color: "#1F2937",
     marginBottom: 8,
   },
   recommendationText: {
     fontSize: 14,
-    color: "#666",
+    color: "#6B7280",
     lineHeight: 20,
     marginBottom: 16,
   },
   recommendationButton: {
-    backgroundColor: "#FFD700",
+    backgroundColor: "#3B82F6",
     paddingVertical: 12,
     paddingHorizontal: 24,
     borderRadius: 25,
@@ -853,7 +893,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
   },
   chatTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "600",
     color: "#FFF",
   },
@@ -866,16 +906,16 @@ const styles = StyleSheet.create({
     paddingTop: 16,
   },
   chatWelcome: {
-    backgroundColor: "#FFF8DC",
+    backgroundColor: "#EBF4FF",
     padding: 16,
     borderRadius: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: "#FFD700",
+    borderColor: "#3B82F6",
   },
   chatWelcomeText: {
     fontSize: 14,
-    color: "#333",
+    color: "#1F2937",
     textAlign: "center",
     lineHeight: 20,
   },
@@ -886,12 +926,12 @@ const styles = StyleSheet.create({
     maxWidth: "80%",
   },
   userBubble: {
-    backgroundColor: "#FFD700",
+    backgroundColor: "#3B82F6",
     alignSelf: "flex-end",
     borderBottomRightRadius: 6,
   },
   botBubble: {
-    backgroundColor: "#F5F5F5",
+    backgroundColor: "#F8F9FA",
     alignSelf: "flex-start",
     borderBottomLeftRadius: 6,
   },
@@ -903,7 +943,7 @@ const styles = StyleSheet.create({
     color: "#FFF",
   },
   botMessageText: {
-    color: "#333",
+    color: "#1F2937",
   },
   chatInputContainer: {
     flexDirection: "row",
@@ -912,17 +952,17 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     backgroundColor: "#FFF",
     borderTopWidth: 0.5,
-    borderTopColor: "#E0E0E0",
+    borderTopColor: "#E5E7EB",
   },
   chatInput: {
     flex: 1,
-    backgroundColor: "#F5F5F5",
+    backgroundColor: "#F8F9FA",
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 14,
     maxHeight: 80,
-    color: "#333",
+    color: "#1F2937",
     marginRight: 12,
   },
   sendButton: {

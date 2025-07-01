@@ -15,9 +15,9 @@ import {
   Alert,
   ActivityIndicator,
 } from "react-native"
+import { LinearGradient } from "expo-linear-gradient"
 import { useRoute, useNavigation } from "@react-navigation/native"
-import { Users, ArrowLeft } from "phosphor-react-native"
-import Colors from "../../../constants/Colors"
+import { Users, ArrowLeft, Send } from "lucide-react-native"
 import ClubMembersList from "../../../components/ClubMembersList"
 import { chatService, type ChatMessage } from "../../../services/chatService"
 import { supabase } from "../../../lib/supabase"
@@ -34,6 +34,7 @@ const ClubChatScreen = () => {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [currentUser, setCurrentUser] = useState<any>(null)
   const [showMembers, setShowMembers] = useState(false)
+
   const flatListRef = useRef<FlatList>(null)
   const subscriptionRef = useRef<any>(null)
 
@@ -58,6 +59,7 @@ const ClubChatScreen = () => {
         navigation.goBack()
         return
       }
+
       setCurrentUserId(user.user.id)
 
       // Récupérer les infos de l'utilisateur actuel
@@ -66,7 +68,7 @@ const ClubChatScreen = () => {
         .select("nom, prenom, photo_profil_url")
         .eq("id", user.user.id)
         .single()
-      
+
       setCurrentUser(userData)
 
       // Vérifier l'appartenance au club
@@ -90,10 +92,11 @@ const ClubChatScreen = () => {
       subscriptionRef.current = chatService.subscribeToClubMessages(id, (message) => {
         // Éviter les doublons - ne pas ajouter si c'est notre propre message qu'on vient d'envoyer
         setMessages((prev) => {
-          const messageExists = prev.some(m => m.id === message.id)
+          const messageExists = prev.some((m) => m.id === message.id)
           if (messageExists) return prev
           return [...prev, message]
         })
+
         setTimeout(() => {
           flatListRef.current?.scrollToEnd({ animated: true })
         }, 100)
@@ -139,24 +142,25 @@ const ClubChatScreen = () => {
     }
 
     // Ajouter le message temporaire à l'affichage
-    setMessages(prev => [...prev, tempMessage])
+    setMessages((prev) => [...prev, tempMessage])
     setTimeout(() => {
       flatListRef.current?.scrollToEnd({ animated: true })
     }, 100)
 
     setSending(true)
+
     try {
       // Envoyer le message réel
       await chatService.sendClubMessage(id, messageText)
-      
+
       // Remplacer le message temporaire par le vrai message quand il arrive via l'abonnement
       // (cela se fera automatiquement via subscribeToClubMessages)
     } catch (error) {
       console.error("Erreur lors de l'envoi du message:", error)
       Alert.alert("Erreur", "Impossible d'envoyer le message")
-      
+
       // Supprimer le message temporaire en cas d'erreur
-      setMessages(prev => prev.filter(m => m.id !== tempMessage.id))
+      setMessages((prev) => prev.filter((m) => m.id !== tempMessage.id))
     } finally {
       setSending(false)
     }
@@ -165,7 +169,7 @@ const ClubChatScreen = () => {
   const renderMessage = ({ item }: { item: ChatMessage }) => {
     const isMyMessage = item.expediteur_id === currentUserId
     const senderName = `${item.expediteur?.prenom || ""} ${item.expediteur?.nom || ""}`.trim()
-    const isTemporary = item.id.startsWith('temp-')
+    const isTemporary = item.id.startsWith("temp-")
 
     return (
       <View style={[styles.messageContainer, isMyMessage ? styles.myMessageContainer : styles.otherMessageContainer]}>
@@ -177,22 +181,26 @@ const ClubChatScreen = () => {
             style={styles.senderAvatar}
           />
         )}
-        <View style={[
-          styles.messageBubble, 
-          isMyMessage ? styles.myMessage : styles.otherMessage,
-          isTemporary && styles.temporaryMessage
-        ]}>
-          {!isMyMessage && <Text style={styles.senderName}>{senderName || "Utilisateur"}</Text>}
-          <Text style={[styles.messageText, isMyMessage ? styles.myMessageText : styles.otherMessageText]}>
-            {item.contenu}
-          </Text>
-          <Text style={[styles.messageTime, isMyMessage ? styles.myMessageTime : styles.otherMessageTime]}>
-            {new Date(item.created_at).toLocaleTimeString("fr-FR", {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
-            {isTemporary && " ⏳"}
-          </Text>
+        <View style={[styles.messageBubble, isTemporary && styles.temporaryMessage]}>
+          <LinearGradient
+            colors={
+              isMyMessage ? ["#3B82F6", "#60A5FA"] : isTemporary ? ["#F3F4F6", "#E5E7EB"] : ["#F8F9FA", "#FFFFFF"]
+            }
+            style={[styles.messageBubbleGradient, isMyMessage ? styles.myMessage : styles.otherMessage]}
+          >
+            {!isMyMessage && <Text style={styles.senderName}>👤 {senderName || "Utilisateur"}</Text>}
+            <Text style={[styles.messageText, isMyMessage ? styles.myMessageText : styles.otherMessageText]}>
+              {item.contenu}
+            </Text>
+            <Text style={[styles.messageTime, isMyMessage ? styles.myMessageTime : styles.otherMessageTime]}>
+              🕐{" "}
+              {new Date(item.created_at).toLocaleTimeString("fr-FR", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+              {isTemporary && " ⏳"}
+            </Text>
+          </LinearGradient>
         </View>
       </View>
     )
@@ -202,8 +210,10 @@ const ClubChatScreen = () => {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.light.tint} />
-          <Text style={styles.loadingText}>Chargement du chat...</Text>
+          <LinearGradient colors={["#EBF4FF", "#DBEAFE"]} style={styles.loadingCard}>
+            <ActivityIndicator size="large" color="#3B82F6" />
+            <Text style={styles.loadingText}> Chargement du chat...</Text>
+          </LinearGradient>
         </View>
       </SafeAreaView>
     )
@@ -211,15 +221,25 @@ const ClubChatScreen = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <ArrowLeft size={24} color={Colors.light.tint} />
+      {/* Header */}
+      <LinearGradient colors={["#FFFFFF", "#F8F9FA"]} style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()} activeOpacity={0.8}>
+          <LinearGradient colors={["#EBF4FF", "#DBEAFE"]} style={styles.iconButton}>
+            <ArrowLeft size={18} color="#3B82F6" />
+          </LinearGradient>
         </TouchableOpacity>
-        <Text style={styles.title}>{name}</Text>
-        <TouchableOpacity style={styles.membersButton} onPress={() => setShowMembers(true)}>
-          <Users size={24} color={Colors.light.tint} />
+
+        <View style={styles.titleContainer}>
+          <Text style={styles.title}> {name}</Text>
+          <Text style={styles.subtitle}>Chat du club</Text>
+        </View>
+
+        <TouchableOpacity style={styles.membersButton} onPress={() => setShowMembers(true)} activeOpacity={0.8}>
+          <LinearGradient colors={["#EBF4FF", "#DBEAFE"]} style={styles.iconButton}>
+            <Users size={18} color="#3B82F6" />
+          </LinearGradient>
         </TouchableOpacity>
-      </View>
+      </LinearGradient>
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
@@ -231,33 +251,47 @@ const ClubChatScreen = () => {
           data={messages}
           keyExtractor={(item) => item.id}
           renderItem={renderMessage}
-          contentContainerStyle={{ padding: 16 }}
+          contentContainerStyle={styles.messagesList}
           showsVerticalScrollIndicator={false}
           onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <LinearGradient colors={["#EBF4FF", "#DBEAFE"]} style={styles.emptyStateCard}>
+                <Text style={styles.emptyStateText}>💬 Aucun message</Text>
+                <Text style={styles.emptyStateSubtext}>Soyez le premier à écrire !</Text>
+              </LinearGradient>
+            </View>
+          }
         />
 
-        <View style={styles.inputContainer}>
-          <TextInput
-            value={newMessage}
-            onChangeText={setNewMessage}
-            placeholder="Tapez votre message..."
-            style={styles.textInput}
-            multiline
-            maxLength={1000}
-            placeholderTextColor="#999"
-          />
+        {/* Input Container */}
+        <LinearGradient colors={["#FFFFFF", "#F8F9FA"]} style={styles.inputContainer}>
+          <LinearGradient colors={["#F8F9FA", "#FFFFFF"]} style={styles.textInputContainer}>
+            <TextInput
+              value={newMessage}
+              onChangeText={setNewMessage}
+              placeholder="💭 Tapez votre message..."
+              style={styles.textInput}
+              multiline
+              maxLength={1000}
+              placeholderTextColor="#9CA3AF"
+            />
+          </LinearGradient>
+
           <TouchableOpacity
             onPress={sendMessage}
-            style={[styles.sendButton, (!newMessage.trim() || sending) && styles.sendButtonDisabled]}
+            style={styles.sendButtonContainer}
             disabled={!newMessage.trim() || sending}
+            activeOpacity={0.8}
           >
-            {sending ? (
-              <ActivityIndicator size="small" color="white" />
-            ) : (
-              <Text style={styles.sendButtonText}>Envoyer</Text>
-            )}
+            <LinearGradient
+              colors={!newMessage.trim() || sending ? ["#D1D5DB", "#9CA3AF"] : ["#3B82F6", "#60A5FA"]}
+              style={styles.sendButton}
+            >
+              {sending ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Send size={16} color="#FFFFFF" />}
+            </LinearGradient>
           </TouchableOpacity>
-        </View>
+        </LinearGradient>
       </KeyboardAvoidingView>
 
       <ClubMembersList clubId={id} visible={showMembers} onClose={() => setShowMembers(false)} />
@@ -270,39 +304,69 @@ export default ClubChatScreen
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#fff",
+    backgroundColor: "#F8FAFF",
   },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    padding: 32,
+  },
+  loadingCard: {
+    alignItems: "center",
+    padding: 24,
+    borderRadius: 20,
+    gap: 12,
   },
   loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: "#666",
+    fontSize: 14,
+    color: "#1F2937",
+    fontWeight: "500",
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: 16,
-    backgroundColor: Colors.light.background,
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 0.5,
+    borderBottomColor: "#E5E7EB",
   },
   backButton: {
-    padding: 8,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: "bold",
-    flex: 1,
-    textAlign: "center",
-    marginHorizontal: 16,
+    borderRadius: 20,
+    overflow: "hidden",
   },
   membersButton: {
-    padding: 8,
+    borderRadius: 20,
+    overflow: "hidden",
+  },
+  iconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  titleContainer: {
+    flex: 1,
+    alignItems: "center",
+    marginHorizontal: 16,
+  },
+  title: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#1F2937",
+    textAlign: "center",
+  },
+  subtitle: {
+    fontSize: 11,
+    color: "#6B7280",
+    textAlign: "center",
+    marginTop: 2,
+  },
+  messagesList: {
+    padding: 16,
+    paddingBottom: 8,
   },
   messageContainer: {
     flexDirection: "row",
@@ -316,86 +380,122 @@ const styles = StyleSheet.create({
     justifyContent: "flex-start",
   },
   senderAvatar: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     marginRight: 8,
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
   },
   messageBubble: {
+    marginVertical: 2,
+    maxWidth: "75%",
+    borderRadius: 16,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  messageBubbleGradient: {
     padding: 10,
-    borderRadius: 10,
-    marginVertical: 4,
-    maxWidth: "70%",
+    borderRadius: 16,
   },
   myMessage: {
-    backgroundColor: Colors.light.tint,
     alignSelf: "flex-end",
+    borderBottomRightRadius: 4,
   },
   otherMessage: {
-    backgroundColor: "#ECECEC",
     alignSelf: "flex-start",
+    borderBottomLeftRadius: 4,
+    borderWidth: 1,
+    borderColor: "#F0F0F0",
   },
   temporaryMessage: {
     opacity: 0.7,
   },
   senderName: {
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: "600",
-    color: Colors.light.tint,
+    color: "#3B82F6",
     marginBottom: 2,
   },
   messageText: {
-    fontSize: 16,
-    lineHeight: 20,
+    fontSize: 14,
+    lineHeight: 18,
   },
   myMessageText: {
-    color: "white",
+    color: "#FFFFFF",
   },
   otherMessageText: {
-    color: "#000",
+    color: "#1F2937",
   },
   messageTime: {
-    fontSize: 11,
+    fontSize: 9,
     marginTop: 4,
   },
   myMessageTime: {
-    color: "white",
-    opacity: 0.7,
+    color: "#FFFFFF",
+    opacity: 0.8,
     textAlign: "right",
   },
   otherMessageTime: {
-    color: "#666",
+    color: "#6B7280",
+  },
+  emptyState: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 64,
+  },
+  emptyStateCard: {
+    alignItems: "center",
+    padding: 24,
+    borderRadius: 20,
+  },
+  emptyStateText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#1F2937",
+    marginBottom: 4,
+  },
+  emptyStateSubtext: {
+    fontSize: 12,
+    color: "#6B7280",
   },
   inputContainer: {
     flexDirection: "row",
-    padding: 10,
-    borderTopWidth: 1,
-    borderColor: "#ccc",
-    backgroundColor: "#fff",
+    alignItems: "flex-end",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 0.5,
+    borderTopColor: "#E5E7EB",
+    gap: 8,
+  },
+  textInputContainer: {
+    flex: 1,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#E9ECEF",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   textInput: {
-    flex: 1,
-    padding: 10,
+    fontSize: 14,
+    color: "#1F2937",
+    maxHeight: 80,
+    minHeight: 36,
+  },
+  sendButtonContainer: {
     borderRadius: 20,
-    backgroundColor: "#f2f2f2",
-    marginRight: 10,
-    maxHeight: 100,
-    fontSize: 16,
+    overflow: "hidden",
   },
   sendButton: {
-    backgroundColor: Colors.light.tint,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
+    width: 40,
+    height: 40,
     borderRadius: 20,
     justifyContent: "center",
     alignItems: "center",
-    minWidth: 80,
-  },
-  sendButtonDisabled: {
-    backgroundColor: "#ccc",
-  },
-  sendButtonText: {
-    color: "white",
-    fontWeight: "600",
   },
 })
