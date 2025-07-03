@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+
 import {
   StyleSheet,
   View,
@@ -14,9 +15,10 @@ import {
   Modal,
   Dimensions,
 } from "react-native"
+
 import { SafeAreaView } from "react-native-safe-area-context"
 import { LinearGradient } from "expo-linear-gradient"
-import { BookOpen, Search, Filter, Star, Share2, MessageSquare, Eye, Moon, Sun } from "lucide-react-native"
+import { BookOpen, Search, Filter, Star, Share2, MessageSquare, Eye, Moon, Sun, X } from "lucide-react-native"
 import { StatusBar } from "expo-status-bar"
 import { supabase } from "@/lib/supabase"
 import { useNavigation } from "expo-router"
@@ -52,6 +54,15 @@ interface Book {
   averageRating?: number
 }
 
+// Interface pour les commentaires
+interface Comment {
+  id: string
+  book_id: string
+  book_title: string
+  review: string
+  created_at: string
+}
+
 // Options de tri
 type SortField = "popularity" | "date" | "rating"
 type SortOrder = "ascending" | "descending"
@@ -71,8 +82,11 @@ export default function LibraryScreen() {
   const [books, setBooks] = useState<Book[]>([])
   const [categories, setCategories] = useState<Category[]>([{ id: "all", name: "Tous les domaines" }])
   const [modalVisible, setModalVisible] = useState(false)
+  const [commentsModalVisible, setCommentsModalVisible] = useState(false)
   const [currentBook, setCurrentBook] = useState<Book | null>(null)
   const [reviewText, setReviewText] = useState("")
+  const [comments, setComments] = useState<Comment[]>([])
+  const [loadingComments, setLoadingComments] = useState(false)
   const [filterModalVisible, setFilterModalVisible] = useState(false)
   const [sortOption, setSortOption] = useState<SortOption>({ field: "date", order: "descending" })
   const [minRating, setMinRating] = useState<number | null>(null)
@@ -188,6 +202,31 @@ export default function LibraryScreen() {
     fetchBooks()
   }, [sortOption, minRating])
 
+  // Fonction pour récupérer les commentaires d'un livre
+  const fetchComments = async (bookId: string) => {
+    setLoadingComments(true)
+    try {
+      const { data, error } = await supabase
+        .from("reviews")
+        .select("*")
+        .eq("book_id", bookId)
+        .order("created_at", { ascending: false })
+
+      if (error) {
+        console.error("Erreur récupération commentaires:", error.message)
+        Alert.alert("Erreur", "Impossible de charger les commentaires.")
+        return
+      }
+
+      setComments(data || [])
+    } catch (error) {
+      console.error("Erreur inattendue:", error)
+      Alert.alert("Erreur", "Une erreur inattendue s'est produite.")
+    } finally {
+      setLoadingComments(false)
+    }
+  }
+
   const filteredBooks = books.filter(
     (book) =>
       (selectedCategory === "all" || book.category.toLowerCase() === selectedCategory.toLowerCase()) &&
@@ -203,6 +242,12 @@ export default function LibraryScreen() {
     setCurrentBook(book)
     setReviewText("")
     setModalVisible(true)
+  }
+
+  const openCommentsModal = async (book: Book) => {
+    setCurrentBook(book)
+    setCommentsModalVisible(true)
+    await fetchComments(book.id)
   }
 
   const submitReview = async () => {
@@ -226,6 +271,10 @@ export default function LibraryScreen() {
         Alert.alert("Erreur", "Une erreur s'est produite lors de l'envoi de votre commentaire.")
       } else {
         Alert.alert("Merci !", "Votre commentaire a été soumis.")
+        // Rafraîchir les commentaires si le modal des commentaires est ouvert
+        if (commentsModalVisible && currentBook) {
+          await fetchComments(currentBook.id)
+        }
       }
     } catch (err: unknown) {
       if (err instanceof Error) {
@@ -337,6 +386,17 @@ export default function LibraryScreen() {
     }
   }
 
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString)
+    return date.toLocaleDateString("fr-FR", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+  }
+
   const renderCategoryItem = ({ item }: { item: Category }) => (
     <TouchableOpacity
       style={[
@@ -382,6 +442,15 @@ export default function LibraryScreen() {
     </TouchableOpacity>
   )
 
+  const renderCommentItem = ({ item }: { item: Comment }) => (
+    <View style={[styles.commentItem, nightMode && styles.commentItemNight]}>
+      <View style={styles.commentHeader}>
+        <Text style={[styles.commentDate, nightMode && styles.commentDateNight]}>{formatDate(item.created_at)}</Text>
+      </View>
+      <Text style={[styles.commentText, nightMode && styles.commentTextNight]}>{item.review}</Text>
+    </View>
+  )
+
   const renderBookItem = ({ item }: { item: Book }) => (
     <TouchableOpacity style={[styles.bookCard, nightMode && styles.bookCardNight]} activeOpacity={0.8}>
       <LinearGradient
@@ -409,12 +478,10 @@ export default function LibraryScreen() {
                 </LinearGradient>
               )}
             </View>
-
             <Text style={[styles.bookAuthor, nightMode && styles.bookAuthorNight]} numberOfLines={1}>
               {item.author}
             </Text>
             <Text style={[styles.bookCategory, nightMode && styles.bookCategoryNight]}>{item.category}</Text>
-
             <View style={styles.bookStats}>
               {item.averageRating && (
                 <>
@@ -443,6 +510,14 @@ export default function LibraryScreen() {
                 activeOpacity={0.8}
               >
                 <MessageSquare size={12} color={nightMode ? "#FFD700" : "#3B82F6"} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.iconButton, nightMode && styles.iconButtonNight]}
+                onPress={() => openCommentsModal(item)}
+                activeOpacity={0.8}
+              >
+                <Eye size={12} color={nightMode ? "#FFD700" : "#3B82F6"} />
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -581,6 +656,72 @@ export default function LibraryScreen() {
                 </LinearGradient>
               </TouchableOpacity>
             </View>
+          </LinearGradient>
+        </View>
+      </Modal>
+
+      {/* Comments Modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={commentsModalVisible}
+        onRequestClose={() => setCommentsModalVisible(false)}
+      >
+        <View style={[styles.modalOverlay, nightMode && styles.modalOverlayNight]}>
+          <LinearGradient
+            colors={nightMode ? ["#1e1e1e", "#2a2a2a"] : ["#ffffff", "#f8f9fa"]}
+            style={styles.commentsModalView}
+          >
+            <View style={styles.commentsHeader}>
+              <Text style={[styles.modalTitle, nightMode && styles.modalTitleNight]}>
+                💬 Commentaires - "{currentBook?.title || ""}"
+              </Text>
+              <TouchableOpacity
+                onPress={() => setCommentsModalVisible(false)}
+                style={[styles.closeButton, nightMode && styles.closeButtonNight]}
+                activeOpacity={0.8}
+              >
+                <X size={20} color={nightMode ? "#FFFFFF" : "#1F2937"} />
+              </TouchableOpacity>
+            </View>
+
+            {loadingComments ? (
+              <View style={styles.loadingContainer}>
+                <Text style={[styles.loadingText, nightMode && styles.loadingTextNight]}>
+                  Chargement des commentaires...
+                </Text>
+              </View>
+            ) : comments.length === 0 ? (
+              <View style={styles.noCommentsContainer}>
+                <Text style={[styles.noCommentsText, nightMode && styles.noCommentsTextNight]}>
+                  Aucun commentaire pour ce livre.
+                </Text>
+                <Text style={[styles.noCommentsSubText, nightMode && styles.noCommentsSubTextNight]}>
+                  Soyez le premier à laisser un avis !
+                </Text>
+              </View>
+            ) : (
+              <FlatList
+                data={comments}
+                renderItem={renderCommentItem}
+                keyExtractor={(item) => item.id}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.commentsList}
+              />
+            )}
+
+            <TouchableOpacity
+              onPress={() => {
+                setCommentsModalVisible(false)
+                openReviewModal(currentBook!)
+              }}
+              activeOpacity={0.8}
+            >
+              <LinearGradient colors={["#3B82F6", "#60A5FA"]} style={styles.addCommentButton}>
+                <MessageSquare size={16} color="#FFFFFF" />
+                <Text style={styles.addCommentButtonText}>Ajouter un commentaire</Text>
+              </LinearGradient>
+            </TouchableOpacity>
           </LinearGradient>
         </View>
       </Modal>
@@ -1007,12 +1148,36 @@ const styles = StyleSheet.create({
     elevation: 10,
     maxHeight: height * 0.8,
   },
+  commentsModalView: {
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 10,
+    maxHeight: height * 0.85,
+    minHeight: height * 0.6,
+  },
+  commentsHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  closeButton: {
+    padding: 4,
+    borderRadius: 8,
+    backgroundColor: "#F3F4F6",
+  },
+  closeButtonNight: {
+    backgroundColor: "#374151",
+  },
   modalTitle: {
     fontSize: 16,
     fontWeight: "bold",
-    marginBottom: 12,
     color: "#1F2937",
-    textAlign: "center",
+    flex: 1,
   },
   modalTitleNight: {
     color: "#FFFFFF",
@@ -1060,10 +1225,101 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 16,
   },
+  addCommentButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    marginTop: 16,
+    gap: 8,
+  },
+  addCommentButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "bold",
+    fontSize: 14,
+  },
   modalButtonText: {
     color: "#FFFFFF",
     fontWeight: "bold",
     fontSize: 14,
+  },
+  commentsList: {
+    paddingVertical: 8,
+  },
+  commentItem: {
+    backgroundColor: "#F8F9FA",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: "#3B82F6",
+  },
+  commentItemNight: {
+    backgroundColor: "#2a2a2a",
+    borderLeftColor: "#60A5FA",
+  },
+  commentHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  commentDate: {
+    fontSize: 11,
+    color: "#6B7280",
+    fontWeight: "500",
+  },
+  commentDateNight: {
+    color: "#9CA3AF",
+  },
+  commentText: {
+    fontSize: 13,
+    color: "#1F2937",
+    lineHeight: 18,
+  },
+  commentTextNight: {
+    color: "#FFFFFF",
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 40,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: "#6B7280",
+    fontStyle: "italic",
+  },
+  loadingTextNight: {
+    color: "#9CA3AF",
+  },
+  noCommentsContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 40,
+  },
+  noCommentsText: {
+    fontSize: 16,
+    color: "#6B7280",
+    fontWeight: "500",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  noCommentsTextNight: {
+    color: "#9CA3AF",
+  },
+  noCommentsSubText: {
+    fontSize: 13,
+    color: "#9CA3AF",
+    textAlign: "center",
+    fontStyle: "italic",
+  },
+  noCommentsSubTextNight: {
+    color: "#6B7280",
   },
   filterSection: {
     marginBottom: 16,

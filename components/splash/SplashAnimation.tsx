@@ -135,7 +135,7 @@ export default function SplashAnimation() {
         ]}
       >
         <Image
-          source={require('@/assets/images/CDP-logo-dore-PNG-1536x658.png')}
+          source={require('@/assets/images/CDP-logo-dore-PNG-1536x658.jpeg')}
           style={styles.mainLogo}
           resizeMode="cover"
         />

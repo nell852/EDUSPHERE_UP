@@ -1,5 +1,7 @@
 "use client"
+
 import { useState, useEffect } from "react"
+
 import {
   StyleSheet,
   View,
@@ -13,8 +15,11 @@ import {
   ScrollView,
   Linking,
   Dimensions,
+  Modal,
 } from "react-native"
+
 import { LinearGradient } from "expo-linear-gradient"
+
 import {
   Camera,
   User as UserIcon,
@@ -29,7 +34,17 @@ import {
   Edit3,
   X,
   MessageCircle,
+  Github,
+  ExternalLink,
+  Edit,
+  Globe,
+  Lock,
+  Calendar,
+  Wrench,
+  Monitor,
+  FileCode,
 } from "lucide-react-native"
+
 import { userService } from "../../services/userService"
 import { supabase } from "../../lib/supabase"
 import * as ImagePicker from "expo-image-picker"
@@ -37,11 +52,10 @@ import { StatusBar } from "expo-status-bar"
 import EditProfileModal from "../../components/EditProfileModal"
 import AddSkillModal from "../../components/AddSkillModal"
 import { router } from "expo-router"
-import * as Print from "expo-print"
-import * as Sharing from "expo-sharing"
 import AddProjectModal from "../../components/AddProjectModal"
 import AddLanguageModal from "../../components/AddLanguageModal"
 import AddHobbyModal from "../../components/AddHobbyModal"
+import CVTemplateModal from "../../components/CVTemplateModal"
 
 const { width } = Dimensions.get("window")
 
@@ -69,6 +83,9 @@ interface Project {
   outils_utilises?: string
   interface_principale?: string
   code_source?: string
+  github_url?: string
+  created_at?: string
+  updated_at?: string
 }
 
 interface Colleague {
@@ -105,12 +122,17 @@ export default function ProfileScreen() {
   const [showProjectModal, setShowProjectModal] = useState(false)
   const [showLanguageModal, setShowLanguageModal] = useState(false)
   const [showHobbyModal, setShowHobbyModal] = useState(false)
+  const [showCVTemplateModal, setShowCVTemplateModal] = useState(false)
   const [editingProject, setEditingProject] = useState<any>(null)
   const [editingSkill, setEditingSkill] = useState<any>(null)
   const [editingLanguage, setEditingLanguage] = useState<any>(null)
   const [editingHobby, setEditingHobby] = useState<any>(null)
   const [spokenLanguages, setSpokenLanguages] = useState<any[]>([])
   const [hobbies, setHobbies] = useState<any[]>([])
+
+  // Nouveau état pour le modal de détails du projet
+  const [showProjectDetailsModal, setShowProjectDetailsModal] = useState(false)
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null)
 
   // États pour les sections collapsibles
   const [expandedSections, setExpandedSections] = useState({
@@ -203,7 +225,7 @@ export default function ProfileScreen() {
         setProgrammingLanguages([])
       }
 
-      // 2. Charger les projets depuis la table projets
+      // 2. Charger les projets depuis la table projets (avec toutes les informations)
       try {
         const { data: userProjects, error: userProjectsError } = await supabase
           .from("projets")
@@ -234,6 +256,9 @@ export default function ProfileScreen() {
               outils_utilises: project.outils_utilises || "",
               interface_principale: project.interface_principale || "",
               code_source: project.code_source || "",
+              github_url: project.github_url || "",
+              created_at: project.created_at,
+              updated_at: project.updated_at,
             })
           }
           setProjects(formattedProjects)
@@ -466,6 +491,17 @@ export default function ProfileScreen() {
     return `${Math.floor(diffInHours / 168)} semaines`
   }
 
+  const formatDate = (dateString: string): string => {
+    const date = new Date(dateString)
+    return date.toLocaleDateString("fr-FR", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+  }
+
   const saveProfile = async () => {
     try {
       setSaving(true)
@@ -575,6 +611,12 @@ export default function ProfileScreen() {
     setShowProjectModal(true)
   }
 
+  // Nouvelle fonction pour voir les détails du projet
+  const viewProjectDetails = (project: Project) => {
+    setSelectedProject(project)
+    setShowProjectDetailsModal(true)
+  }
+
   const editProject = (project: any) => {
     setEditingProject(project)
     setShowProjectModal(true)
@@ -605,6 +647,21 @@ export default function ProfileScreen() {
         },
       },
     ])
+  }
+
+  // Fonction pour ouvrir le lien GitHub
+  const openGithubLink = async (githubUrl: string) => {
+    try {
+      const supported = await Linking.canOpenURL(githubUrl)
+      if (supported) {
+        await Linking.openURL(githubUrl)
+      } else {
+        Alert.alert("Erreur", "Impossible d'ouvrir le lien GitHub")
+      }
+    } catch (error) {
+      console.error("Erreur lors de l'ouverture du lien GitHub:", error)
+      Alert.alert("Erreur", "Impossible d'ouvrir le lien GitHub")
+    }
   }
 
   const editSkill = (skill: any) => {
@@ -713,159 +770,9 @@ export default function ProfileScreen() {
     ])
   }
 
-  const generateCV = async () => {
-    try {
-      const cvHTML = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <title>CV - ${profile?.prenom} ${profile?.nom}</title>
-      <style>
-        body { font-family: Arial, sans-serif; margin: 40px; color: #333; line-height: 1.6; }
-        .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #3B82F6; padding-bottom: 20px; }
-        .name { font-size: 28px; font-weight: bold; color: #3B82F6; margin-bottom: 10px; }
-        .contact { margin: 5px 0; color: #666; }
-        .section { margin: 25px 0; }
-        .section-title { font-size: 20px; font-weight: bold; color: #3B82F6; border-bottom: 1px solid #3B82F6; padding-bottom: 5px; margin-bottom: 15px; }
-        .item { margin: 15px 0; padding: 15px; background: #f9f9f9; border-radius: 8px; border-left: 4px solid #3B82F6; }
-        .item-title { font-weight: bold; color: #333; font-size: 16px; }
-        .item-level { display: inline-block; background: #3B82F6; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px; margin-left: 10px; }
-        .item-description { margin-top: 8px; color: #666; }
-        .languages-grid, .hobbies-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
-        .project-languages { margin-top: 8px; }
-        .project-language { display: inline-block; background: #60A5FA; color: #333; padding: 2px 6px; border-radius: 4px; font-size: 11px; margin-right: 5px; }
-      </style>
-    </head>
-    <body>
-      <div class="header">
-        <div class="name">${profile?.prenom} ${profile?.nom}</div>
-        <div class="contact">📧 ${profile?.email}</div>
-        <div class="contact">🆔 Matricule: ${profile?.matricule}</div>
-        ${profile?.date_de_naissance ? `<div class="contact">📅 ${new Date(profile.date_de_naissance).toLocaleDateString("fr-FR")}</div>` : ""}
-      </div>
-      
-      ${
-        skills.length > 0
-          ? `
-      <div class="section">
-        <div class="section-title">🎯 Compétences Professionnelles</div>
-        ${skills
-          .map(
-            (skill) => `
-          <div class="item">
-            <div class="item-title">${skill.nom}<span class="item-level">${skill.niveau}</span></div>
-            ${skill.description ? `<div class="item-description">${skill.description}</div>` : ""}
-            ${skill.experience ? `<div class="item-description"><strong>Expérience:</strong> ${skill.experience}</div>` : ""}
-            ${skill.certifications ? `<div class="item-description"><strong>Certifications:</strong> ${skill.certifications}</div>` : ""}
-          </div>
-        `,
-          )
-          .join("")}
-      </div>
-      `
-          : ""
-      }
-      
-      ${
-        programmingLanguages.length > 0
-          ? `
-      <div class="section">
-        <div class="section-title">💻 Langages de Programmation</div>
-        <div class="item">
-          <div class="item-description">${programmingLanguages.join(", ")}</div>
-        </div>
-      </div>
-      `
-          : ""
-      }
-      
-      ${
-        spokenLanguages.length > 0
-          ? `
-      <div class="section">
-        <div class="section-title">🌍 Langues Parlées</div>
-        <div class="languages-grid">
-          ${spokenLanguages
-            .map(
-              (lang) => `
-            <div class="item">
-              <div class="item-title">${lang.langue}<span class="item-level">${lang.niveau}</span></div>
-              ${lang.certification ? `<div class="item-description"><strong>Certification:</strong> ${lang.certification}</div>` : ""}
-            </div>
-          `,
-            )
-            .join("")}
-        </div>
-      </div>
-      `
-          : ""
-      }
-      
-      ${
-        projects.length > 0
-          ? `
-      <div class="section">
-        <div class="section-title">🚀 Projets</div>
-        ${projects
-          .map(
-            (project) => `
-          <div class="item">
-            <div class="item-title">${project.name}</div>
-            <div class="item-description">${project.description}</div>
-            ${
-              project.languages.length > 0
-                ? `
-              <div class="project-languages">
-                ${project.languages.map((lang) => `<span class="project-language">${lang}</span>`).join("")}
-              </div>
-            `
-                : ""
-            }
-          </div>
-        `,
-          )
-          .join("")}
-      </div>
-      `
-          : ""
-      }
-      
-      ${
-        hobbies.length > 0
-          ? `
-      <div class="section">
-        <div class="section-title">🎨 Loisirs & Centres d'intérêt</div>
-        <div class="hobbies-grid">
-          ${hobbies
-            .map(
-              (hobby) => `
-            <div class="item">
-              <div class="item-title">${hobby.nom}${hobby.niveau ? `<span class="item-level">${hobby.niveau}</span>` : ""}</div>
-              ${hobby.description ? `<div class="item-description">${hobby.description}</div>` : ""}
-            </div>
-          `,
-            )
-            .join("")}
-        </div>
-      </div>
-      `
-          : ""
-      }
-      
-      <div style="margin-top: 40px; text-align: center; color: #666; font-size: 12px;">
-        CV généré le ${new Date().toLocaleDateString("fr-FR")} à ${new Date().toLocaleTimeString("fr-FR")}
-      </div>
-    </body>
-    </html>
-  `
-
-      const { uri } = await Print.printToFileAsync({ html: cvHTML })
-      await Sharing.shareAsync(uri)
-    } catch (error) {
-      console.error("Erreur génération CV:", error)
-      Alert.alert("Erreur", "Impossible de générer le CV")
-    }
+  // Nouvelle fonction pour générer le CV avec templates
+  const generateCV = () => {
+    setShowCVTemplateModal(true)
   }
 
   const openCodeEditor = () => {
@@ -1210,7 +1117,7 @@ export default function ProfileScreen() {
                       <TouchableOpacity
                         key={project.id}
                         style={styles.projectCard}
-                        onPress={() => editProject(project)}
+                        onPress={() => viewProjectDetails(project)}
                         onLongPress={() => deleteProject(project.id)}
                         activeOpacity={0.8}
                       >
@@ -1225,7 +1132,9 @@ export default function ProfileScreen() {
                               <ChevronRight size={12} color="#6B7280" />
                             </View>
                           </View>
+
                           <Text style={styles.projectDescription}>{project.description}</Text>
+
                           {project.languages.length > 0 && (
                             <View style={styles.projectLanguages}>
                               {project.languages.map((language, index) => (
@@ -1239,6 +1148,28 @@ export default function ProfileScreen() {
                               ))}
                             </View>
                           )}
+
+                          {/* Lien GitHub intégré directement après les langages */}
+                          {project.github_url && (
+                            <TouchableOpacity
+                              style={styles.githubButtonIntegrated}
+                              onPress={(e) => {
+                                e.stopPropagation()
+                                openGithubLink(project.github_url!)
+                              }}
+                              activeOpacity={0.8}
+                            >
+                              <LinearGradient
+                                colors={["#24292E", "#586069"]}
+                                style={styles.githubButtonIntegratedGradient}
+                              >
+                                <Github size={12} color="#FFFFFF" />
+                                <Text style={styles.githubButtonIntegratedText}>Voir sur GitHub</Text>
+                                <ExternalLink size={10} color="#FFFFFF" />
+                              </LinearGradient>
+                            </TouchableOpacity>
+                          )}
+
                           <View style={styles.projectFooter}>
                             <View style={styles.projectCollaborators}>
                               <Users size={10} color="#6B7280" />
@@ -1430,8 +1361,8 @@ export default function ProfileScreen() {
                         <FileText size={16} color="#FFFFFF" />
                       </LinearGradient>
                       <View style={styles.toolInfo}>
-                        <Text style={styles.toolName}>Générer CV</Text>
-                        <Text style={styles.toolDescription}>Créer un CV professionnel basé sur vos données</Text>
+                        <Text style={styles.toolName}>Générer CV Professionnel</Text>
+                        <Text style={styles.toolDescription}>Créer un CV avec des templates professionnels</Text>
                       </View>
                       <ChevronRight size={12} color="#6B7280" />
                     </LinearGradient>
@@ -1559,6 +1490,200 @@ export default function ProfileScreen() {
         )}
       </ScrollView>
 
+      {/* Modal de détails du projet */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={showProjectDetailsModal}
+        onRequestClose={() => setShowProjectDetailsModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <LinearGradient colors={["#FFFFFF", "#F8F9FA"]} style={styles.projectDetailsModal}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {/* Header du modal */}
+              <View style={styles.projectDetailsHeader}>
+                <View style={styles.projectDetailsHeaderLeft}>
+                  <Text style={styles.projectDetailsTitle}>{selectedProject?.name}</Text>
+                  <View style={styles.projectDetailsStatusContainer}>
+                    <LinearGradient
+                      colors={selectedProject?.status === "termine" ? ["#10B981", "#34D399"] : ["#F59E0B", "#FBBF24"]}
+                      style={styles.projectDetailsStatusDot}
+                    />
+                    <Text style={styles.projectDetailsStatusText}>
+                      {selectedProject?.status === "termine" ? "Terminé" : "En cours"}
+                    </Text>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  style={styles.closeModalButton}
+                  onPress={() => setShowProjectDetailsModal(false)}
+                  activeOpacity={0.8}
+                >
+                  <X size={20} color="#6B7280" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Contenu du projet */}
+              <View style={styles.projectDetailsContent}>
+                {/* Description */}
+                <View style={styles.projectDetailsSection}>
+                  <View style={styles.projectDetailsSectionHeader}>
+                    <FileText size={16} color="#3B82F6" />
+                    <Text style={styles.projectDetailsSectionTitle}>Description</Text>
+                  </View>
+                  <Text style={styles.projectDetailsDescription}>
+                    {selectedProject?.description || "Aucune description disponible"}
+                  </Text>
+                </View>
+
+                {/* Langages utilisés */}
+                {selectedProject?.languages && selectedProject.languages.length > 0 && (
+                  <View style={styles.projectDetailsSection}>
+                    <View style={styles.projectDetailsSectionHeader}>
+                      <Code size={16} color="#3B82F6" />
+                      <Text style={styles.projectDetailsSectionTitle}>Langages utilisés</Text>
+                    </View>
+                    <View style={styles.projectDetailsLanguages}>
+                      {selectedProject.languages.map((language, index) => (
+                        <LinearGradient
+                          key={index}
+                          colors={["#60A5FA", "#93C5FD"]}
+                          style={styles.projectDetailsLanguageChip}
+                        >
+                          <Text style={styles.projectDetailsLanguageText}>{language}</Text>
+                        </LinearGradient>
+                      ))}
+                    </View>
+                  </View>
+                )}
+
+                {/* Outils utilisés */}
+                {selectedProject?.outils_utilises && (
+                  <View style={styles.projectDetailsSection}>
+                    <View style={styles.projectDetailsSectionHeader}>
+                      <Wrench size={16} color="#3B82F6" />
+                      <Text style={styles.projectDetailsSectionTitle}>Outils utilisés</Text>
+                    </View>
+                    <Text style={styles.projectDetailsText}>{selectedProject.outils_utilises}</Text>
+                  </View>
+                )}
+
+                {/* Interface principale */}
+                {selectedProject?.interface_principale && (
+                  <View style={styles.projectDetailsSection}>
+                    <View style={styles.projectDetailsSectionHeader}>
+                      <Monitor size={16} color="#3B82F6" />
+                      <Text style={styles.projectDetailsSectionTitle}>Interface principale</Text>
+                    </View>
+                    <Text style={styles.projectDetailsText}>{selectedProject.interface_principale}</Text>
+                  </View>
+                )}
+
+                {/* Code source */}
+                {selectedProject?.code_source && (
+                  <View style={styles.projectDetailsSection}>
+                    <View style={styles.projectDetailsSectionHeader}>
+                      <FileCode size={16} color="#3B82F6" />
+                      <Text style={styles.projectDetailsSectionTitle}>Code source</Text>
+                    </View>
+                    <Text style={styles.projectDetailsText}>{selectedProject.code_source}</Text>
+                  </View>
+                )}
+
+                {/* Visibilité */}
+                <View style={styles.projectDetailsSection}>
+                  <View style={styles.projectDetailsSectionHeader}>
+                    {selectedProject?.visibility === "public" ? (
+                      <Globe size={16} color="#3B82F6" />
+                    ) : (
+                      <Lock size={16} color="#3B82F6" />
+                    )}
+                    <Text style={styles.projectDetailsSectionTitle}>Visibilité</Text>
+                  </View>
+                  <Text style={styles.projectDetailsText}>
+                    {selectedProject?.visibility === "public" ? "Public" : "Privé"}
+                  </Text>
+                </View>
+
+                {/* Collaborateurs */}
+                <View style={styles.projectDetailsSection}>
+                  <View style={styles.projectDetailsSectionHeader}>
+                    <Users size={16} color="#3B82F6" />
+                    <Text style={styles.projectDetailsSectionTitle}>Collaborateurs</Text>
+                  </View>
+                  <Text style={styles.projectDetailsText}>
+                    {selectedProject?.collaborators || 0} collaborateur
+                    {(selectedProject?.collaborators || 0) > 1 ? "s" : ""}
+                  </Text>
+                </View>
+
+                {/* Dates */}
+                <View style={styles.projectDetailsSection}>
+                  <View style={styles.projectDetailsSectionHeader}>
+                    <Calendar size={16} color="#3B82F6" />
+                    <Text style={styles.projectDetailsSectionTitle}>Informations temporelles</Text>
+                  </View>
+                  {selectedProject?.created_at && (
+                    <Text style={styles.projectDetailsDate}>Créé le: {formatDate(selectedProject.created_at)}</Text>
+                  )}
+                  {selectedProject?.updated_at && (
+                    <Text style={styles.projectDetailsDate}>
+                      Dernière modification: {formatDate(selectedProject.updated_at)}
+                    </Text>
+                  )}
+                </View>
+
+                {/* Lien GitHub */}
+                {selectedProject?.github_url && (
+                  <TouchableOpacity
+                    style={styles.projectDetailsGithubButton}
+                    onPress={() => openGithubLink(selectedProject.github_url!)}
+                    activeOpacity={0.8}
+                  >
+                    <LinearGradient colors={["#24292E", "#586069"]} style={styles.projectDetailsGithubGradient}>
+                      <Github size={16} color="#FFFFFF" />
+                      <Text style={styles.projectDetailsGithubText}>Voir sur GitHub</Text>
+                      <ExternalLink size={14} color="#FFFFFF" />
+                    </LinearGradient>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Boutons d'action */}
+              <View style={styles.projectDetailsActions}>
+                <TouchableOpacity
+                  style={styles.projectDetailsEditButton}
+                  onPress={() => {
+                    setShowProjectDetailsModal(false)
+                    editProject(selectedProject)
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <LinearGradient colors={["#3B82F6", "#60A5FA"]} style={styles.projectDetailsEditGradient}>
+                    <Edit size={16} color="#FFFFFF" />
+                    <Text style={styles.projectDetailsEditText}>Modifier</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.projectDetailsDeleteButton}
+                  onPress={() => {
+                    setShowProjectDetailsModal(false)
+                    deleteProject(selectedProject?.id || "")
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <LinearGradient colors={["#EF4444", "#F87171"]} style={styles.projectDetailsDeleteGradient}>
+                    <X size={16} color="#FFFFFF" />
+                    <Text style={styles.projectDetailsDeleteText}>Supprimer</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </LinearGradient>
+        </View>
+      </Modal>
+
       <EditProfileModal
         visible={showEditModal}
         onClose={() => setShowEditModal(false)}
@@ -1619,6 +1744,17 @@ export default function ProfileScreen() {
           loadUserData()
         }}
         hobby={editingHobby}
+      />
+
+      <CVTemplateModal
+        visible={showCVTemplateModal}
+        onClose={() => setShowCVTemplateModal(false)}
+        profile={profile}
+        skills={skills}
+        projects={projects}
+        programmingLanguages={programmingLanguages}
+        spokenLanguages={spokenLanguages}
+        hobbies={hobbies}
       />
     </SafeAreaView>
   )
@@ -1983,7 +2119,7 @@ const styles = StyleSheet.create({
   },
   projectLanguages: {
     flexDirection: "row",
-    marginBottom: 4,
+    marginBottom: 6,
     flexWrap: "wrap",
     gap: 3,
   },
@@ -1996,6 +2132,25 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: "#FFFFFF",
     fontWeight: "500",
+  },
+  // Nouveau style pour le bouton GitHub intégré
+  githubButtonIntegrated: {
+    borderRadius: 8,
+    overflow: "hidden",
+    marginBottom: 6,
+  },
+  githubButtonIntegratedGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    gap: 4,
+  },
+  githubButtonIntegratedText: {
+    fontSize: 11,
+    color: "#FFFFFF",
+    fontWeight: "600",
   },
   projectFooter: {
     flexDirection: "row",
@@ -2257,5 +2412,169 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: "#6B7280",
     minWidth: 25,
+  },
+  // Styles pour le modal de détails du projet
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 16,
+  },
+  projectDetailsModal: {
+    width: "100%",
+    maxHeight: "90%",
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 10,
+  },
+  projectDetailsHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
+  },
+  projectDetailsHeaderLeft: {
+    flex: 1,
+    marginRight: 16,
+  },
+  projectDetailsTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#1F2937",
+    marginBottom: 8,
+  },
+  projectDetailsStatusContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  projectDetailsStatusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  projectDetailsStatusText: {
+    fontSize: 14,
+    color: "#6B7280",
+    fontWeight: "500",
+  },
+  closeModalButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: "#F3F4F6",
+  },
+  projectDetailsContent: {
+    marginBottom: 20,
+  },
+  projectDetailsSection: {
+    marginBottom: 16,
+  },
+  projectDetailsSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+    gap: 8,
+  },
+  projectDetailsSectionTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#1F2937",
+  },
+  projectDetailsDescription: {
+    fontSize: 14,
+    color: "#4B5563",
+    lineHeight: 20,
+  },
+  projectDetailsText: {
+    fontSize: 14,
+    color: "#4B5563",
+    lineHeight: 20,
+  },
+  projectDetailsLanguages: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  projectDetailsLanguageChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  projectDetailsLanguageText: {
+    fontSize: 12,
+    color: "#FFFFFF",
+    fontWeight: "600",
+  },
+  projectDetailsDate: {
+    fontSize: 13,
+    color: "#6B7280",
+    marginBottom: 4,
+  },
+  projectDetailsGithubButton: {
+    borderRadius: 12,
+    overflow: "hidden",
+    marginTop: 8,
+  },
+  projectDetailsGithubGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  projectDetailsGithubText: {
+    fontSize: 14,
+    color: "#FFFFFF",
+    fontWeight: "600",
+  },
+  projectDetailsActions: {
+    flexDirection: "row",
+    gap: 12,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: "#E5E7EB",
+  },
+  projectDetailsEditButton: {
+    flex: 1,
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  projectDetailsEditGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    gap: 8,
+  },
+  projectDetailsEditText: {
+    fontSize: 14,
+    color: "#FFFFFF",
+    fontWeight: "600",
+  },
+  projectDetailsDeleteButton: {
+    flex: 1,
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  projectDetailsDeleteGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    gap: 8,
+  },
+  projectDetailsDeleteText: {
+    fontSize: 14,
+    color: "#FFFFFF",
+    fontWeight: "600",
   },
 })

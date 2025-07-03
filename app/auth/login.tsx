@@ -46,32 +46,25 @@ export default function LoginScreen() {
 
     setIsLoading(true)
     try {
-      console.log("Tentative de connexion:", { matricule })
       const { data, error } = await supabase.auth.signInWithPassword({
         email: matricule,
         password,
       })
 
-      console.log("Réponse Supabase:", { data, error })
-
       if (error) {
         if (error.message.includes("Email not confirmed")) {
-          Alert.alert(
-            "Erreur",
-            "Votre email n'est pas confirmé. Veuillez vérifier votre boîte de réception ou le dossier spam pour le lien de confirmation.",
-          )
+          Alert.alert("Erreur", "Veuillez confirmer votre email avant de vous connecter.")
         } else if (error.message.includes("Invalid login credentials")) {
           Alert.alert("Erreur", "Matricule ou mot de passe incorrect")
         } else {
           Alert.alert("Erreur", error.message)
         }
       } else if (!data.user) {
-        Alert.alert("Erreur", "Aucun utilisateur trouvé. Vérifiez vos identifiants.")
+        Alert.alert("Erreur", "Aucun utilisateur trouvé")
       } else {
         router.replace("/(tabs)")
       }
     } catch (error) {
-      console.log("Erreur complète:", error)
       Alert.alert("Erreur", "Erreur inconnue lors de la connexion")
     } finally {
       setIsLoading(false)
@@ -81,50 +74,28 @@ export default function LoginScreen() {
   const handleSocialLogin = async (provider: "google" | "facebook" | "apple") => {
     setIsLoading(true)
     try {
-      console.log("Tentative de connexion sociale:", { provider })
       const redirectTo =
         Platform.OS === "web" && process.env.NODE_ENV === "development"
           ? "http://localhost:8081/auth/callback"
-          : "https://nrwngoruunmsvvhsxbue.supabase.co/auth/v1/callback"
+          : "https://ppfvnxscqdlhnpvwexjw.supabase.co/auth/v1/callback"
 
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider,
-        options: {
-          redirectTo,
-        },
+        options: { redirectTo },
       })
-
-      console.log("Réponse Supabase:", { data, error })
 
       if (error) {
         if (error.message.includes("redirect_uri_mismatch")) {
-          Alert.alert(
-            "Erreur de connexion",
-            `L'URL de redirection ne correspond pas pour ${provider}. Assurez-vous que '${redirectTo}' est ajoutée dans les paramètres du fournisseur dans la console du développeur (par exemple, Google Cloud Console pour Google).`,
-          )
-        } else if (error.message.includes("Unsupported provider")) {
-          Alert.alert(
-            "Erreur",
-            `Le fournisseur ${provider} n'est pas activé. Vérifiez la configuration dans le tableau de bord Supabase.`,
-          )
+          Alert.alert("Erreur", `L'URL de redirection ne correspond pas pour ${provider}.`)
         } else {
           Alert.alert("Erreur", error.message)
         }
       }
     } catch (error) {
-      console.log("Erreur complète:", error)
       Alert.alert("Erreur", "Erreur inconnue lors de la connexion sociale")
     } finally {
       setIsLoading(false)
     }
-  }
-
-  const navigateToSignup = () => {
-    router.push("/auth/signup")
-  }
-
-  const navigateToForgotPassword = () => {
-    router.push("./forgot-password")
   }
 
   return (
@@ -132,11 +103,8 @@ export default function LoginScreen() {
       <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
       >
         <StatusBar style="dark" />
-
-        {/* Background decorative elements */}
         <View style={styles.backgroundElements}>
           <View style={[styles.circle, styles.circle1]} />
           <View style={[styles.circle, styles.circle2]} />
@@ -144,117 +112,95 @@ export default function LoginScreen() {
         </View>
 
         <View style={styles.content}>
-          {/* Header Section */}
+          {/* Header */}
           <View style={styles.headerSection}>
-            <View style={styles.logoContainer}>
-              <View style={styles.logoWrapper}>
-                <Image source={require("@/assets/images/logo.png")} style={styles.logo} />
-              </View>
+            <View style={styles.logoWrapper}>
+              <Image source={require("@/assets/images/logo.png")} style={styles.logo} />
             </View>
             <Text style={styles.logoText}>EduSphere</Text>
             <Text style={styles.logoSubtext}>Educational Platform</Text>
           </View>
 
-          {/* Form Section */}
+          {/* Form */}
           <View style={styles.formContainer}>
-            <View style={styles.welcomeSection}>
-              <Text style={styles.title}>Bon retour !</Text>
-              <Text style={styles.subtitle}>Connectez-vous à votre compte</Text>
+            <Text style={styles.title}>Bon retour !</Text>
+            <Text style={styles.subtitle}>Connectez-vous à votre compte</Text>
+
+            <View style={styles.inputContainer}>
+              <User size={22} color="#3B82F6" />
+              <TextInput
+                placeholder="Matricule (email)"
+                placeholderTextColor="#9CA3AF"
+                style={styles.input}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                value={matricule}
+                onChangeText={setMatricule}
+              />
             </View>
 
-            {/* Input Fields */}
-            <View style={styles.inputsSection}>
-              <View style={styles.inputContainer}>
-                <View style={styles.inputIconContainer}>
-                  <User size={22} color="#3B82F6" />
-                </View>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Matricule (email)"
-                  value={matricule}
-                  onChangeText={setMatricule}
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  placeholderTextColor="#9CA3AF"
-                />
-              </View>
-
-              <View style={styles.inputContainer}>
-                <View style={styles.inputIconContainer}>
-                  <Lock size={22} color="#3B82F6" />
-                </View>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Mot de passe"
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry={!showPassword}
-                  placeholderTextColor="#9CA3AF"
-                />
-                <TouchableOpacity
-                  style={styles.eyeIconContainer}
-                  onPress={() => setShowPassword(!showPassword)}
-                  activeOpacity={0.7}
-                >
-                  {showPassword ? <EyeOff size={22} color="#9CA3AF" /> : <Eye size={22} color="#9CA3AF" />}
-                </TouchableOpacity>
-              </View>
+            <View style={styles.inputContainer}>
+              <Lock size={22} color="#3B82F6" />
+              <TextInput
+                placeholder="Mot de passe"
+                placeholderTextColor="#9CA3AF"
+                style={styles.input}
+                secureTextEntry={!showPassword}
+                value={password}
+                onChangeText={setPassword}
+              />
+              <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+                {showPassword ? <EyeOff size={22} color="#9CA3AF" /> : <Eye size={22} color="#9CA3AF" />}
+              </TouchableOpacity>
             </View>
 
             <TouchableOpacity
               style={styles.forgotPasswordContainer}
-              onPress={navigateToForgotPassword}
-              activeOpacity={0.7}
+              onPress={() => router.push("./forgot-password")}
             >
               <Text style={styles.forgotPasswordText}>Mot de passe oublié ?</Text>
             </TouchableOpacity>
 
-            {/* Login Button */}
             <TouchableOpacity
               style={[styles.loginButton, isLoading && styles.disabledButton]}
               onPress={handleLogin}
               disabled={isLoading}
-              activeOpacity={0.8}
             >
-              <Text style={styles.loginButtonText}>{isLoading ? "Connexion..." : "Se connecter"}</Text>
+              <Text style={styles.loginButtonText}>
+                {isLoading ? "Connexion..." : "Se connecter"}
+              </Text>
             </TouchableOpacity>
 
-            {/* Divider */}
             <View style={styles.dividerContainer}>
               <View style={styles.divider} />
               <Text style={styles.dividerText}>Ou continuer avec</Text>
               <View style={styles.divider} />
             </View>
 
-            {/* Social Buttons */}
             <View style={styles.socialButtonsContainer}>
               <TouchableOpacity
                 style={styles.socialButton}
                 onPress={() => handleSocialLogin("google")}
-                activeOpacity={0.8}
               >
                 <Text style={styles.socialButtonText}>Google</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.socialButton}
                 onPress={() => handleSocialLogin("facebook")}
-                activeOpacity={0.8}
               >
                 <Text style={styles.socialButtonText}>Facebook</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.socialButton}
                 onPress={() => handleSocialLogin("apple")}
-                activeOpacity={0.8}
               >
                 <Text style={styles.socialButtonText}>Apple</Text>
               </TouchableOpacity>
             </View>
 
-            {/* Sign Up Link */}
             <View style={styles.signupContainer}>
               <Text style={styles.signupText}>Pas encore de compte ? </Text>
-              <TouchableOpacity onPress={navigateToSignup} activeOpacity={0.7}>
+              <TouchableOpacity onPress={() => router.push("/auth/signup")}>
                 <Text style={styles.signupLink}>S'inscrire</Text>
               </TouchableOpacity>
             </View>
@@ -264,6 +210,7 @@ export default function LoginScreen() {
     </SafeAreaView>
   )
 }
+
 
 const styles = StyleSheet.create({
   safeArea: {

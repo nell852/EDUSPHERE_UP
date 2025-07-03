@@ -1,10 +1,10 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { StyleSheet, View, Text, FlatList, TouchableOpacity, TextInput } from "react-native"
+import { View, Text, FlatList, StyleSheet, TextInput, TouchableOpacity } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { LinearGradient } from "expo-linear-gradient"
-import { Search, Share2, HelpCircle, FileText, Upload, BookOpen } from "lucide-react-native"
+import { Search, Share2, HelpCircle, FileText, BookOpen } from "lucide-react-native"
 import SchoolSelector from "@/components/exams/SchoolSelector"
 import { StatusBar } from "expo-status-bar"
 import { supabase } from "@/lib/supabase"
@@ -36,14 +36,13 @@ const ALL_LEVELS: Level[] = [
   { id: "m2", name: "M2" },
 ]
 
-export default function ExamsScreen() {
+const ExamsScreen = () => {
   const [selectedSchool, setSelectedSchool] = useState<string>("")
   const [selectedLevel, setSelectedLevel] = useState<string>("")
   const [exams, setExams] = useState<Exam[]>([])
   const [schools, setSchools] = useState<string[]>([])
   const [searchQuery, setSearchQuery] = useState<string>("")
   const [loading, setLoading] = useState<boolean>(true)
-
   const navigation = useNavigation()
 
   useEffect(() => {
@@ -63,7 +62,7 @@ export default function ExamsScreen() {
 
         if (schoolsError) throw schoolsError
 
-        const uniqueSchools = Array.from(new Set(schoolsData?.map((item) => item.ecole) || []))
+        const uniqueSchools = Array.from(new Set(schoolsData?.map((item) => item.ecole).filter(Boolean) || []))
         setSchools(uniqueSchools)
       } catch (error) {
         console.error("Error fetching data:", error)
@@ -82,12 +81,15 @@ export default function ExamsScreen() {
   const getAvailableLevels = (): Level[] => {
     if (!selectedSchool) return ALL_LEVELS
 
-    const normalizeLevel = (level: string) => level.trim().toLowerCase()
+    const normalizeLevel = (level: string | null | undefined) => {
+      if (!level) return ""
+      return level.trim().toLowerCase()
+    }
 
     const levelsInSchool = exams
-      .filter((exam) => exam.ecole === selectedSchool)
+      .filter((exam) => exam.ecole === selectedSchool && exam.niveau)
       .map((exam) => normalizeLevel(exam.niveau))
-      .filter((value, index, self) => self.indexOf(value) === index)
+      .filter((value, index, self) => value && self.indexOf(value) === index)
 
     return ALL_LEVELS.filter(
       (level) =>
@@ -106,7 +108,7 @@ export default function ExamsScreen() {
     try {
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(exam.contenu_url, {
-          dialogTitle: `Share ${exam.matiere} - ${exam.ecole}`,
+          dialogTitle: `Share ${exam.matiere || "Exam"} - ${exam.ecole || "School"}`,
         })
       } else {
         alert("Sharing is not available on this device")
@@ -124,13 +126,22 @@ export default function ExamsScreen() {
     // TODO: Implement API call to external AI service with exam.contenu_url
   }
 
-  const filteredExams = exams.filter(
-    (exam) =>
-      (selectedSchool === "" || exam.ecole === selectedSchool) &&
-      (selectedLevel === "" || exam.niveau.toLowerCase() === selectedLevel.toLowerCase()) &&
-      (exam.matiere.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        exam.title.toLowerCase().includes(searchQuery.toLowerCase())),
-  )
+  const filteredExams = exams.filter((exam) => {
+    // Vérification pour l'école
+    const schoolMatch = selectedSchool === "" || exam.ecole === selectedSchool
+
+    // Vérification pour le niveau avec protection contre undefined/null
+    const levelMatch =
+      selectedLevel === "" || (exam.niveau && exam.niveau.toLowerCase() === selectedLevel.toLowerCase())
+
+    // Vérification pour la recherche avec protection contre undefined/null
+    const searchMatch =
+      searchQuery === "" ||
+      (exam.matiere && exam.matiere.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (exam.title && exam.title.toLowerCase().includes(searchQuery.toLowerCase()))
+
+    return schoolMatch && levelMatch && searchMatch
+  })
 
   const renderLevelItem = ({ item }: { item: Level }) => (
     <TouchableOpacity style={styles.levelTab} onPress={() => setSelectedLevel(item.id)} activeOpacity={0.8}>
@@ -150,21 +161,20 @@ export default function ExamsScreen() {
           <View style={styles.examHeader}>
             <View style={styles.examTitleContainer}>
               <BookOpen size={16} color="#3B82F6" />
-              <Text style={styles.examTitle}>{item.matiere}</Text>
+              <Text style={styles.examTitle}>{item.matiere || "Matière non définie"}</Text>
             </View>
             <Text style={styles.examSchool}>
-              {item.ecole} - {item.niveau}
+              {item.ecole || "École non définie"} - {item.niveau || "Niveau non défini"}
             </Text>
           </View>
-
           <View style={styles.examDetails}>
             <View style={styles.examDetailItem}>
               <Text style={styles.examDetailLabel}>📅 Année:</Text>
-              <Text style={styles.examDetailValue}>{item.annee}</Text>
+              <Text style={styles.examDetailValue}>{item.annee || "Non définie"}</Text>
             </View>
             <View style={styles.examDetailItem}>
-              <Text style={styles.examDetailLabel}> Difficulté:</Text>
-              <Text style={styles.examDetailValue}>{item.difficulte}</Text>
+              <Text style={styles.examDetailLabel}>🎯 Difficulté:</Text>
+              <Text style={styles.examDetailValue}>{item.difficulte || "Non définie"}</Text>
             </View>
           </View>
 
@@ -204,7 +214,6 @@ export default function ExamsScreen() {
       {/* Header */}
       <LinearGradient colors={["#FFFFFF", "#F8F9FA"]} style={styles.header}>
         <Text style={styles.headerTitle}>Examens</Text>
-       
       </LinearGradient>
 
       <SchoolSelector selectedSchool={selectedSchool} onSelectSchool={setSelectedSchool} schools={schools} />
@@ -503,3 +512,5 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
 })
+
+export default ExamsScreen

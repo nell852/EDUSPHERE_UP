@@ -116,7 +116,11 @@ export default function SchoolSelector({ selectedSchool, onSelectSchool, schools
                 activeOpacity={0.8}
               >
                 <LinearGradient
-                  colors={isSelected ? (schoolInfo.color as import("react-native").ColorValue[]) : ["#F8F9FA", "#FFFFFF"]}
+                  colors={
+                    isSelected
+                      ? [schoolInfo.color[0], schoolInfo.color[1]] as [import("react-native").ColorValue, import("react-native").ColorValue]
+                      : ["#F8F9FA", "#FFFFFF"]
+                  }
                   style={[styles.schoolCard, isSelected && styles.selectedSchoolCard]}
                 >
                   <View style={styles.logoContainer}>
