@@ -80,8 +80,8 @@ Créer un écosystème où l'étudiant peut non seulement apprendre et s'exercer
 
 1. **Cloner le repository**
    ```bash
-   git clone https://github.com/votre-org/edusphere-mobile-app.git
-   cd edusphere-mobile-app
+   git clone https://github.com/nell852/EDUSPHERE_UP.git
+   cd EDUSPHERE_UP
    ```
 
 2. **Installer les dépendances**
