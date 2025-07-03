@@ -228,9 +228,9 @@ Les contributions sont les bienvenues ! Veuillez lire notre [guide de contributi
 
 ## 📞 Support
 
-- **Email** : support@edusphere.app
+- **Email** : edusphere745@gmail.com
 - **Documentation** : [docs.edusphere.app](https://docs.edusphere.app)
-- **Issues** : [GitHub Issues](https://github.com/votre-org/edusphere-mobile-app/issues)
+- **Issues** : [GitHub Issues](https://github.com/nell852/EDUSPHERE_UP/issues)
 
 ## 🔗 Liens Utiles
 
